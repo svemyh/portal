@@ -6,7 +6,9 @@ https://maxis.fit/projects/portal
 
 LIVE URL : https://portal-ma1m.onrender.com
 
-INSTALL INSTRUCTIONS COMING SOON
+TO INSTALL :
 
-npm install
+run the following in terminal :
+
+npm install, then ===>
 node server.js
