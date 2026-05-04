@@ -1,67 +1,67 @@
-<!DO<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <title>portal</title>
 
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+
 <style>
-  * {
-    font-family: "Courier New", Courier, monospace;
-  }
+* { font-family: "Courier New", Courier, monospace; }
 
-  body {
-    margin: 0;
-    background: black;
-    color: white;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-  }
+body {
+  margin: 0;
+  background: black;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
 
-  #container {
-    text-align: center;
-  }
+#container { text-align: center; }
 
-  #title {
-    position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    text-align: center;
-    font-size: 14px;
-    letter-spacing: 1px;
-  }
+#title {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  letter-spacing: 1px;
+}
 
-  #title span {
-    font-size: 11px;
-    opacity: 0.6;
-  }
+#title span {
+  font-size: 11px;
+  opacity: 0.6;
+}
 
-  video {
-    width: 40vw;
-    max-width: 400px;
-    margin: 10px;
-    background: black;
-  }
+video {
+  width: 40vw;
+  max-width: 400px;
+  margin: 10px;
+  background: black;
+}
 
-  input {
-    background: black;
-    color: white;
-    border: 1px solid white;
-    padding: 10px;
-    font-family: inherit;
-  }
+input {
+  background: black;
+  color: white;
+  border: 1px solid white;
+  padding: 10px;
+}
 
-  button {
-    margin-left: 10px;
-    padding: 10px;
-    background: white;
-    color: black;
-    border: none;
-    cursor: pointer;
-    font-family: inherit;
-  }
+button {
+  margin-left: 10px;
+  padding: 10px;
+  background: white;
+  color: black;
+  border: none;
+  cursor: pointer;
+}
+
+#similarity {
+  font-size: 12px;
+  opacity: 0.7;
+}
 </style>
 </head>
 
@@ -71,7 +71,7 @@
 
   <div id="title">
     portal<br>
-    <span>v0.0.1</span>
+    <span>v0.0.2</span>
   </div>
 
   <div id="entry">
@@ -80,13 +80,9 @@
   </div>
 
   <div id="stage" style="display:none;">
-    <div>you</div>
     <video id="local" autoplay muted playsinline></video>
-
-    <div id="status">waiting...</div>
-
-    <div>other</div>
     <video id="remote" autoplay playsinline></video>
+    <div id="similarity"></div>
   </div>
 
 </div>
@@ -100,6 +96,9 @@ let localStream;
 let pc;
 let currentCode;
 
+let myDescriptor = null;
+
+// ---------- JOIN ----------
 async function join() {
   const code = document.getElementById("code").value.trim();
   if (!code) return;
@@ -107,22 +106,23 @@ async function join() {
   currentCode = code;
 
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  document.getElementById("local").srcObject = localStream;
+  const localVideo = document.getElementById("local");
+  localVideo.srcObject = localStream;
 
   document.getElementById("entry").style.display = "none";
   document.getElementById("stage").style.display = "block";
 
+  await loadModels();
+
+  setTimeout(async () => {
+    myDescriptor = await getEmbedding(localVideo);
+  }, 1200);
+
   socket.emit("join", code);
 }
 
-socket.on("full", () => {
-  alert("room full");
-  location.reload();
-});
-
+// ---------- SOCKET ----------
 socket.on("peer", async ({ initiator }) => {
-  document.getElementById("status").innerText = "connecting...";
-
   pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
   });
@@ -132,8 +132,10 @@ socket.on("peer", async ({ initiator }) => {
   });
 
   pc.ontrack = (event) => {
-    document.getElementById("remote").srcObject = event.streams[0];
-    document.getElementById("status").innerText = "";
+    const remoteVideo = document.getElementById("remote");
+    remoteVideo.srcObject = event.streams[0];
+
+    setInterval(compareLoop, 1500);
   };
 
   pc.onicecandidate = (event) => {
@@ -162,23 +164,60 @@ socket.on("signal", async (data) => {
   } else {
     try {
       await pc.addIceCandidate(new RTCIceCandidate(data));
-    } catch (e) {}
+    } catch {}
   }
 });
 
+// ---------- FACE ----------
+async function loadModels() {
+  await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
+  await faceapi.nets.faceRecognitionNet.loadFromUri("/models");
+}
 
-// NEW: press Enter to join
-document.getElementById("code").addEventListener("keydown", function(e) {
-  if (e.key === "Enter") {
-    join();
+async function getEmbedding(video) {
+  const result = await faceapi
+    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+
+  return result ? result.descriptor : null;
+}
+
+// calibrated similarity (important)
+function calibratedSimilarity(a, b) {
+  if (!a || !b) return null;
+
+  const distance = faceapi.euclideanDistance(a, b);
+
+  // normalization window (empirically stable)
+  const min = 0.35;
+  const max = 0.85;
+
+  let norm = (distance - min) / (max - min);
+  norm = Math.max(0, Math.min(1, norm));
+
+  return (1 - norm).toFixed(3);
+}
+
+async function compareLoop() {
+  const remoteVideo = document.getElementById("remote");
+
+  const other = await getEmbedding(remoteVideo);
+  const sim = calibratedSimilarity(myDescriptor, other);
+
+  if (sim) {
+    document.getElementById("similarity").innerText = sim;
   }
+}
+
+// ---------- UX ----------
+document.getElementById("code").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") join();
 });
 
-// NEW: autofocus on load
 window.onload = () => {
   document.getElementById("code").focus();
 };
-
 </script>
 
 </body>
