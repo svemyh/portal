@@ -38,6 +38,8 @@ io.on("connection", (socket) => {
     const code = socket.code;
     if (!code || !rooms[code]) return;
 
+    socket.to(code).emit("peer_left");
+
     rooms[code] = rooms[code].filter(id => id !== socket.id);
 
     if (rooms[code].length === 0) {
