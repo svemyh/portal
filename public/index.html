@@ -4,8 +4,6 @@
 <meta charset="UTF-8">
 <title>portal</title>
 
-<script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
-
 <style>
 * { font-family: "Courier New", Courier, monospace; }
 
@@ -57,11 +55,6 @@ button {
   border: none;
   cursor: pointer;
 }
-
-#similarity {
-  font-size: 12px;
-  opacity: 0.7;
-}
 </style>
 </head>
 
@@ -71,7 +64,7 @@ button {
 
   <div id="title">
     portal<br>
-    <span>v0.0.2</span>
+    <span>v0.0.1</span>
   </div>
 
   <div id="entry">
@@ -82,7 +75,6 @@ button {
   <div id="stage" style="display:none;">
     <video id="local" autoplay muted playsinline></video>
     <video id="remote" autoplay playsinline></video>
-    <div id="similarity"></div>
   </div>
 
 </div>
@@ -96,9 +88,6 @@ let localStream;
 let pc;
 let currentCode;
 
-let myDescriptor = null;
-
-// ---------- JOIN ----------
 async function join() {
   const code = document.getElementById("code").value.trim();
   if (!code) return;
@@ -106,22 +95,19 @@ async function join() {
   currentCode = code;
 
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  const localVideo = document.getElementById("local");
-  localVideo.srcObject = localStream;
+  document.getElementById("local").srcObject = localStream;
 
   document.getElementById("entry").style.display = "none";
   document.getElementById("stage").style.display = "block";
 
-  await loadModels();
-
-  setTimeout(async () => {
-    myDescriptor = await getEmbedding(localVideo);
-  }, 1200);
-
   socket.emit("join", code);
 }
 
-// ---------- SOCKET ----------
+socket.on("full", () => {
+  alert("room full");
+  location.reload();
+});
+
 socket.on("peer", async ({ initiator }) => {
   pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -132,10 +118,7 @@ socket.on("peer", async ({ initiator }) => {
   });
 
   pc.ontrack = (event) => {
-    const remoteVideo = document.getElementById("remote");
-    remoteVideo.srcObject = event.streams[0];
-
-    setInterval(compareLoop, 1500);
+    document.getElementById("remote").srcObject = event.streams[0];
   };
 
   pc.onicecandidate = (event) => {
@@ -168,49 +151,7 @@ socket.on("signal", async (data) => {
   }
 });
 
-// ---------- FACE ----------
-async function loadModels() {
-  await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
-  await faceapi.nets.faceRecognitionNet.loadFromUri("/models");
-}
-
-async function getEmbedding(video) {
-  const result = await faceapi
-    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-    .withFaceLandmarks()
-    .withFaceDescriptor();
-
-  return result ? result.descriptor : null;
-}
-
-// calibrated similarity (important)
-function calibratedSimilarity(a, b) {
-  if (!a || !b) return null;
-
-  const distance = faceapi.euclideanDistance(a, b);
-
-  // normalization window (empirically stable)
-  const min = 0.35;
-  const max = 0.85;
-
-  let norm = (distance - min) / (max - min);
-  norm = Math.max(0, Math.min(1, norm));
-
-  return (1 - norm).toFixed(3);
-}
-
-async function compareLoop() {
-  const remoteVideo = document.getElementById("remote");
-
-  const other = await getEmbedding(remoteVideo);
-  const sim = calibratedSimilarity(myDescriptor, other);
-
-  if (sim) {
-    document.getElementById("similarity").innerText = sim;
-  }
-}
-
-// ---------- UX ----------
+// UX improvements (kept)
 document.getElementById("code").addEventListener("keydown", (e) => {
   if (e.key === "Enter") join();
 });
