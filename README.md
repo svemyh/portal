@@ -1,6 +1,6 @@
 READ LISENSE
 
-Max Tindall
+Max Tindall,
 PORTAL, 2026.
 https://maxis.fit/projects/portal
 
