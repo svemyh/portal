@@ -3,7 +3,7 @@ PORTAL, 2026.
 https://maxis.fit/portal
 
 
-LIVE URL : https://portal-ma1m.onrender.com
+LIVE URL : https://portal.maxis.fit
 
 
 TO USE :
