@@ -10,5 +10,5 @@ TO INSTALL :
 
 run the following in terminal 
 
-npm install
+npm install ===>
 node server.js
