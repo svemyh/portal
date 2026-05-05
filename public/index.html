@@ -55,6 +55,30 @@ button {
   border: none;
   cursor: pointer;
 }
+
+/* ---------- CONNECTED STATE ---------- */
+
+#status {
+  position: relative;
+  z-index: 1000;
+}
+
+.connected #local,
+.connected #stage div:first-child,
+.connected #stage div:nth-child(3) {
+  display: none;
+}
+
+.connected #remote {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  z-index: 999;
+  background: black;
+}
 </style>
 </head>
 
@@ -64,7 +88,7 @@ button {
 
   <div id="title">
     portal<br>
-    <span>v0.0.1</span>
+    <span>v0.0.2</span>
   </div>
 
   <div id="entry">
@@ -73,12 +97,12 @@ button {
   </div>
 
   <div id="stage" style="display:none;">
-    <div>user #1</div>
+    <div>you</div>
     <video id="local" autoplay muted playsinline></video>
 
     <div id="status">waiting...</div>
 
-    <div>user #2</div>
+    <div>other</div>
     <video id="remote" autoplay playsinline></video>
   </div>
 
@@ -128,7 +152,10 @@ socket.on("peer", async ({ initiator }) => {
 
   pc.ontrack = (event) => {
     document.getElementById("remote").srcObject = event.streams[0];
-    document.getElementById("status").innerText = "";
+
+    // ---------- CONNECTED STATE ----------
+    document.getElementById("status").innerText = "connected";
+    document.body.classList.add("connected");
   };
 
   pc.onicecandidate = (event) => {
@@ -172,4 +199,4 @@ window.onload = () => {
 </script>
 
 </body>
-</html>
+</html>>
