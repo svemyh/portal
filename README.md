@@ -1,5 +1,3 @@
-READ LICENSE
-
 Max Tindall,
 PORTAL, 2026.
 https://maxis.fit/portal
