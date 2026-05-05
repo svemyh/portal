@@ -18,4 +18,4 @@ TO USE :
 
 NOTES :
 
-* currently unknown how many rooms can exist at once, likely low due to render limitations [using the free plan].
+* currently unknown how many rooms can exist at once, likely low due to render limitations [currently running on the free plan].
