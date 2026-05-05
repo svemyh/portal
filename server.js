@@ -4,6 +4,7 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server);
 
 app.use(express.static("public"));
@@ -13,8 +14,13 @@ const rooms = {};
 io.on("connection", (socket) => {
 
   socket.on("join", (code) => {
+
+    code = code.trim();
+
     if (!rooms[code]) {
-      rooms[code] = { users: [] };
+      rooms[code] = {
+        users: []
+      };
     }
 
     const room = rooms[code];
@@ -29,24 +35,37 @@ io.on("connection", (socket) => {
     room.users.push(socket.id);
 
     socket.join(code);
+
     socket.code = code;
 
-    socket.emit("assigned", { userNumber });
+    socket.emit("assigned", {
+      userNumber
+    });
 
     if (room.users.length === 2) {
+
       const [first, second] = room.users;
 
-      io.to(first).emit("peer", { initiator: true });
-      io.to(second).emit("peer", { initiator: false });
+      io.to(first).emit("peer", {
+        initiator: true
+      });
+
+      io.to(second).emit("peer", {
+        initiator: false
+      });
     }
   });
 
   socket.on("signal", ({ code, data }) => {
+
     socket.to(code).emit("signal", data);
+
   });
 
   socket.on("disconnect", () => {
+
     const code = socket.code;
+
     if (!code || !rooms[code]) return;
 
     const room = rooms[code];
@@ -59,7 +78,6 @@ io.on("connection", (socket) => {
       delete rooms[code];
     }
   });
-
 });
 
 const PORT = process.env.PORT || 3000;

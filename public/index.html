@@ -5,7 +5,10 @@
 <title>portal</title>
 
 <style>
-* { font-family: "Courier New", Courier, monospace; }
+
+* {
+  font-family: "Courier New", Courier, monospace;
+}
 
 body {
   margin: 0;
@@ -15,9 +18,12 @@ body {
   justify-content: center;
   align-items: center;
   height: 100vh;
+  overflow: hidden;
 }
 
-#container { text-align: center; }
+#container {
+  text-align: center;
+}
 
 #title {
   position: absolute;
@@ -25,6 +31,8 @@ body {
   left: 50%;
   transform: translateX(-50%);
   font-size: 14px;
+  letter-spacing: 1px;
+  z-index: 1001;
 }
 
 #title span {
@@ -36,6 +44,7 @@ video {
   width: 40vw;
   max-width: 400px;
   margin: 10px;
+  background: black;
 }
 
 input {
@@ -54,14 +63,21 @@ button {
   cursor: pointer;
 }
 
-/* CONNECTED STATE */
-
 #status {
   position: relative;
-  z-index: 1000;
+  z-index: 1001;
+  margin: 10px 0;
 }
 
 .connected #local {
+  display: none;
+}
+
+.connected #label-local {
+  display: none;
+}
+
+.connected #label-remote {
   display: none;
 }
 
@@ -70,10 +86,13 @@ button {
   top: 50%;
   left: 50%;
   height: 100vh;
+  width: 100vw;
   transform: translate(-50%, -50%);
-  object-fit: contain;
+  object-fit: cover;
   z-index: 999;
+  background: black;
 }
+
 </style>
 </head>
 
@@ -83,7 +102,7 @@ button {
 
   <div id="title">
     portal<br>
-    <span>v0.0.1</span>
+    <span>v0.0.2</span>
   </div>
 
   <div id="entry">
@@ -92,13 +111,26 @@ button {
   </div>
 
   <div id="stage" style="display:none;">
+
     <div id="label-local">#?</div>
-    <video id="local" autoplay muted playsinline></video>
+
+    <video
+      id="local"
+      autoplay
+      muted
+      playsinline>
+    </video>
 
     <div id="status">waiting...</div>
 
     <div id="label-remote">#?</div>
-    <video id="remote" autoplay playsinline></video>
+
+    <video
+      id="remote"
+      autoplay
+      playsinline>
+    </video>
+
   </div>
 
 </div>
@@ -106,6 +138,7 @@ button {
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
+
 const socket = io();
 
 let localStream;
@@ -114,65 +147,137 @@ let currentCode;
 let myUserNumber = null;
 
 async function join() {
-  const code = document.getElementById("code").value.trim();
+
+  const code =
+    document.getElementById("code")
+    .value
+    .trim();
+
   if (!code) return;
 
   currentCode = code;
 
-  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  document.getElementById("local").srcObject = localStream;
+  localStream =
+    await navigator.mediaDevices.getUserMedia({
 
-  document.getElementById("entry").style.display = "none";
-  document.getElementById("stage").style.display = "block";
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 24, max: 30 }
+      },
 
-  document.getElementById("status").innerText = "waiting...";
+      audio: true
+    });
+
+  document.getElementById("local").srcObject =
+    localStream;
+
+  document.getElementById("entry").style.display =
+    "none";
+
+  document.getElementById("stage").style.display =
+    "block";
+
+  document.getElementById("status").innerText =
+    "waiting...";
 
   socket.emit("join", code);
 }
 
 socket.on("assigned", ({ userNumber }) => {
+
   myUserNumber = userNumber;
-  document.getElementById("label-local").innerText = "#" + userNumber;
+
+  document.getElementById("label-local").innerText =
+    "#" + userNumber;
 });
 
 socket.on("full", () => {
+
   alert("room full");
+
   location.reload();
 });
 
 socket.on("peer", async ({ initiator }) => {
-  document.getElementById("status").innerText = "connecting...";
 
-  if (myUserNumber) {
-    document.getElementById("label-remote").innerText =
-      "#" + (myUserNumber === 1 ? 2 : 1);
-  }
+  document.getElementById("status").innerText =
+    "connecting...";
+
+  document.getElementById("label-remote").innerText =
+    "#" + (myUserNumber === 1 ? 2 : 1);
 
   pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+
+    iceServers: [
+
+      {
+        urls: "stun:stun.l.google.com:19302"
+      },
+
+      {
+        urls: [
+          "stun:root:3478",
+          "turn:root:3478"
+        ],
+
+        username: "root",
+        credential: "2=Ru,]WYA,C}x+NX"
+      }
+    ]
   });
 
   localStream.getTracks().forEach(track => {
+
     pc.addTrack(track, localStream);
+
+  });
+
+  // stabilize bitrate
+  pc.getSenders().forEach(sender => {
+
+    if (
+      sender.track &&
+      sender.track.kind === "video"
+    ) {
+
+      const params = sender.getParameters();
+
+      if (!params.encodings) {
+        params.encodings = [{}];
+      }
+
+      params.encodings[0].maxBitrate = 500000;
+
+      sender.setParameters(params);
+    }
   });
 
   pc.ontrack = (event) => {
-    document.getElementById("remote").srcObject = event.streams[0];
+
+    document.getElementById("remote").srcObject =
+      event.streams[0];
 
     document.getElementById("status").innerText =
-      "#" + currentCode + " - #" + (myUserNumber || "?");
+      "#" + currentCode + " - #" + myUserNumber;
 
     document.body.classList.add("connected");
   };
 
   pc.onicecandidate = (event) => {
+
     if (event.candidate) {
-      socket.emit("signal", { code: currentCode, data: event.candidate });
+
+      socket.emit("signal", {
+        code: currentCode,
+        data: event.candidate
+      });
     }
   };
 
-  // 🔁 refresh if connection breaks
+  // auto refresh if connection dies
   pc.onconnectionstatechange = () => {
+
     if (
       pc.connectionState === "disconnected" ||
       pc.connectionState === "failed" ||
@@ -183,44 +288,79 @@ socket.on("peer", async ({ initiator }) => {
   };
 
   if (initiator) {
-    const offer = await pc.createOffer();
+
+    const offer =
+      await pc.createOffer();
+
     await pc.setLocalDescription(offer);
-    socket.emit("signal", { code: currentCode, data: offer });
+
+    socket.emit("signal", {
+      code: currentCode,
+      data: offer
+    });
   }
 });
 
 socket.on("signal", async (data) => {
+
   if (!pc) return;
 
   if (data.type === "offer") {
-    await pc.setRemoteDescription(new RTCSessionDescription(data));
-    const answer = await pc.createAnswer();
+
+    await pc.setRemoteDescription(
+      new RTCSessionDescription(data)
+    );
+
+    const answer =
+      await pc.createAnswer();
+
     await pc.setLocalDescription(answer);
-    socket.emit("signal", { code: currentCode, data: answer });
+
+    socket.emit("signal", {
+      code: currentCode,
+      data: answer
+    });
 
   } else if (data.type === "answer") {
-    await pc.setRemoteDescription(new RTCSessionDescription(data));
+
+    await pc.setRemoteDescription(
+      new RTCSessionDescription(data)
+    );
 
   } else {
+
     try {
-      await pc.addIceCandidate(new RTCIceCandidate(data));
+
+      await pc.addIceCandidate(
+        new RTCIceCandidate(data)
+      );
+
     } catch {}
   }
 });
 
-// 🔁 refresh if peer disconnects
+// refresh if peer leaves
 socket.on("peer_left", () => {
+
   location.reload();
+
 });
 
-// UX
-document.getElementById("code").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") join();
+// enter key support
+document.getElementById("code")
+.addEventListener("keydown", (e) => {
+
+  if (e.key === "Enter") {
+    join();
+  }
 });
 
 window.onload = () => {
+
   document.getElementById("code").focus();
+
 };
+
 </script>
 
 </body>
