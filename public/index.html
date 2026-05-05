@@ -71,11 +71,12 @@ button {
 
 .connected #remote {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
+  top: 50%;
+  left: 50%;
+  width: auto;
   height: 100vh;
-  object-fit: cover;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
   z-index: 999;
   background: black;
 }
@@ -88,12 +89,12 @@ button {
 
   <div id="title">
     portal<br>
-    <span>v0.0.1</span>
+    <span>v0.0.2</span>
   </div>
 
   <div id="entry">
     <input id="code" placeholder="enter code" />
-    <button onclick="join()"enter </button>
+    <button onclick="join()">enter</button>
   </div>
 
   <div id="stage" style="display:none;">
@@ -116,6 +117,7 @@ const socket = io();
 let localStream;
 let pc;
 let currentCode;
+let myUserNumber = null;
 
 async function join() {
   const code = document.getElementById("code").value.trim();
@@ -133,6 +135,11 @@ async function join() {
 
   socket.emit("join", code);
 }
+
+// receive assigned number
+socket.on("assigned", ({ userNumber }) => {
+  myUserNumber = userNumber;
+});
 
 socket.on("full", () => {
   alert("room full");
@@ -153,8 +160,10 @@ socket.on("peer", async ({ initiator }) => {
   pc.ontrack = (event) => {
     document.getElementById("remote").srcObject = event.streams[0];
 
-    // ---------- CONNECTED STATE ----------
-    document.getElementById("status").innerText = "connected";
+    // show #room - #user
+    document.getElementById("status").innerText =
+      "#" + currentCode + " - #" + (myUserNumber || "?");
+
     document.body.classList.add("connected");
   };
 
@@ -199,4 +208,4 @@ window.onload = () => {
 </script>
 
 </body>
-</html>>
+</html>
