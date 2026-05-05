@@ -63,9 +63,7 @@ button {
   z-index: 1000;
 }
 
-.connected #local,
-.connected #stage div:first-child,
-.connected #stage div:nth-child(3) {
+.connected #local {
   display: none;
 }
 
@@ -98,12 +96,12 @@ button {
   </div>
 
   <div id="stage" style="display:none;">
-    <div>you</div>
+    <div id="label-local">#?</div>
     <video id="local" autoplay muted playsinline></video>
 
     <div id="status">waiting...</div>
 
-    <div>other</div>
+    <div id="label-remote">#?</div>
     <video id="remote" autoplay playsinline></video>
   </div>
 
@@ -136,9 +134,11 @@ async function join() {
   socket.emit("join", code);
 }
 
-// receive assigned number
+// assign local user number
 socket.on("assigned", ({ userNumber }) => {
   myUserNumber = userNumber;
+
+  document.getElementById("label-local").innerText = "#" + userNumber;
 });
 
 socket.on("full", () => {
@@ -148,6 +148,12 @@ socket.on("full", () => {
 
 socket.on("peer", async ({ initiator }) => {
   document.getElementById("status").innerText = "connecting...";
+
+  // set remote label
+  if (myUserNumber) {
+    document.getElementById("label-remote").innerText =
+      "#" + (myUserNumber === 1 ? 2 : 1);
+  }
 
   pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -160,7 +166,6 @@ socket.on("peer", async ({ initiator }) => {
   pc.ontrack = (event) => {
     document.getElementById("remote").srcObject = event.streams[0];
 
-    // show #room - #user
     document.getElementById("status").innerText =
       "#" + currentCode + " - #" + (myUserNumber || "?");
 
@@ -188,8 +193,10 @@ socket.on("signal", async (data) => {
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     socket.emit("signal", { code: currentCode, data: answer });
+
   } else if (data.type === "answer") {
     await pc.setRemoteDescription(new RTCSessionDescription(data));
+
   } else {
     try {
       await pc.addIceCandidate(new RTCIceCandidate(data));
@@ -197,7 +204,7 @@ socket.on("signal", async (data) => {
   }
 });
 
-// UX improvements
+// UX
 document.getElementById("code").addEventListener("keydown", (e) => {
   if (e.key === "Enter") join();
 });
