@@ -8,7 +8,7 @@ LIVE URL : https://portal-ma1m.onrender.com
 
 TO INSTALL :
 
-run the following in terminal :
+run the following in terminal 
 
-npm install, then ===>
+npm install
 node server.js
