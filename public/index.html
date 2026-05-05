@@ -73,7 +73,12 @@ button {
   </div>
 
   <div id="stage" style="display:none;">
+    <div>you</div>
     <video id="local" autoplay muted playsinline></video>
+
+    <div id="status">waiting...</div>
+
+    <div>other</div>
     <video id="remote" autoplay playsinline></video>
   </div>
 
@@ -100,6 +105,8 @@ async function join() {
   document.getElementById("entry").style.display = "none";
   document.getElementById("stage").style.display = "block";
 
+  document.getElementById("status").innerText = "waiting...";
+
   socket.emit("join", code);
 }
 
@@ -109,6 +116,8 @@ socket.on("full", () => {
 });
 
 socket.on("peer", async ({ initiator }) => {
+  document.getElementById("status").innerText = "connecting...";
+
   pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
   });
@@ -119,6 +128,7 @@ socket.on("peer", async ({ initiator }) => {
 
   pc.ontrack = (event) => {
     document.getElementById("remote").srcObject = event.streams[0];
+    document.getElementById("status").innerText = "";
   };
 
   pc.onicecandidate = (event) => {
@@ -151,7 +161,7 @@ socket.on("signal", async (data) => {
   }
 });
 
-// UX improvements (kept)
+// UX improvements
 document.getElementById("code").addEventListener("keydown", (e) => {
   if (e.key === "Enter") join();
 });
