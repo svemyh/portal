@@ -25,7 +25,6 @@ body {
   left: 50%;
   transform: translateX(-50%);
   font-size: 14px;
-  letter-spacing: 1px;
 }
 
 #title span {
@@ -37,7 +36,6 @@ video {
   width: 40vw;
   max-width: 400px;
   margin: 10px;
-  background: black;
 }
 
 input {
@@ -56,7 +54,7 @@ button {
   cursor: pointer;
 }
 
-/* ---------- CONNECTED STATE ---------- */
+/* CONNECTED STATE */
 
 #status {
   position: relative;
@@ -71,12 +69,10 @@ button {
   position: fixed;
   top: 50%;
   left: 50%;
-  width: auto;
   height: 100vh;
   transform: translate(-50%, -50%);
   object-fit: contain;
   z-index: 999;
-  background: black;
 }
 </style>
 </head>
@@ -134,10 +130,8 @@ async function join() {
   socket.emit("join", code);
 }
 
-// assign local user number
 socket.on("assigned", ({ userNumber }) => {
   myUserNumber = userNumber;
-
   document.getElementById("label-local").innerText = "#" + userNumber;
 });
 
@@ -149,7 +143,6 @@ socket.on("full", () => {
 socket.on("peer", async ({ initiator }) => {
   document.getElementById("status").innerText = "connecting...";
 
-  // set remote label
   if (myUserNumber) {
     document.getElementById("label-remote").innerText =
       "#" + (myUserNumber === 1 ? 2 : 1);
@@ -178,6 +171,17 @@ socket.on("peer", async ({ initiator }) => {
     }
   };
 
+  // 🔁 refresh if connection breaks
+  pc.onconnectionstatechange = () => {
+    if (
+      pc.connectionState === "disconnected" ||
+      pc.connectionState === "failed" ||
+      pc.connectionState === "closed"
+    ) {
+      location.reload();
+    }
+  };
+
   if (initiator) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -202,6 +206,11 @@ socket.on("signal", async (data) => {
       await pc.addIceCandidate(new RTCIceCandidate(data));
     } catch {}
   }
+});
+
+// 🔁 refresh if peer disconnects
+socket.on("peer_left", () => {
+  location.reload();
 });
 
 // UX
