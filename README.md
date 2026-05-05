@@ -12,3 +12,5 @@ TO USE :
 * if #2, type in code exactly as given including spaces and capitalization.
 * the page will refresh if the connection is interrupted for any reason
   and the connection will have to be reinitiated.
+* rooms can only contain two users currently.
+* refresh to disconnect.
