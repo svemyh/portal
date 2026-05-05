@@ -8,47 +8,70 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
+// rooms now store structured data
 const rooms = {};
 
 io.on("connection", (socket) => {
 
   socket.on("join", (code) => {
-    if (!rooms[code]) rooms[code] = [];
+    // initialize room
+    if (!rooms[code]) {
+      rooms[code] = {
+        users: []
+      };
+    }
 
-    if (rooms[code].length >= 2) {
+    const room = rooms[code];
+
+    // limit to 2 users
+    if (room.users.length >= 2) {
       socket.emit("full");
       return;
     }
 
-    rooms[code].push(socket.id);
+    // assign user number deterministically
+    const userNumber = room.users.length === 0 ? 1 : 2;
+
+    room.users.push(socket.id);
+
     socket.join(code);
     socket.code = code;
 
-    const userNumber = rooms[code].length;
-
+    // send user identity
     socket.emit("assigned", { userNumber });
 
-    if (rooms[code].length === 2) {
-      const [a, b] = rooms[code];
+    // when both users present, assign roles explicitly
+    if (room.users.length === 2) {
+      const [first, second] = room.users;
 
-      io.to(a).emit("peer", { initiator: true });
-      io.to(b).emit("peer", { initiator: false });
+      // first = initiator (#1)
+      io.to(first).emit("peer", { initiator: true });
+
+      // second = receiver (#2)
+      io.to(second).emit("peer", { initiator: false });
     }
   });
 
+  // relay signaling
   socket.on("signal", ({ code, data }) => {
     socket.to(code).emit("signal", data);
   });
 
+  // cleanup on disconnect
   socket.on("disconnect", () => {
     const code = socket.code;
     if (!code || !rooms[code]) return;
 
+    const room = rooms[code];
+
+    // remove user from room
+    room.users = room.users.filter(id => id !== socket.id);
+
+    // notify remaining peer
     socket.to(code).emit("peer_left");
 
-    rooms[code] = rooms[code].filter(id => id !== socket.id);
-
-    if (rooms[code].length === 0) {
+    // delete empty room
+    if (room.users.length === 0) {
       delete rooms[code];
     }
   });
