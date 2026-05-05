@@ -1,6 +1,6 @@
 Max Tindall,
 PORTAL, 2026.
-https://maxis.fit/portal
+https://maxis.fit/portal.html
 
 
 LIVE URL : https://portal.maxis.fit
