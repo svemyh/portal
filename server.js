@@ -3,6 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 const app = express();
+
 const server = http.createServer(app);
 
 const io = new Server(server);
@@ -18,6 +19,7 @@ io.on("connection", (socket) => {
     code = code.trim();
 
     if (!rooms[code]) {
+
       rooms[code] = {
         users: []
       };
@@ -26,11 +28,14 @@ io.on("connection", (socket) => {
     const room = rooms[code];
 
     if (room.users.length >= 2) {
+
       socket.emit("full");
+
       return;
     }
 
-    const userNumber = room.users.length === 0 ? 1 : 2;
+    const userNumber =
+      room.users.length === 0 ? 1 : 2;
 
     room.users.push(socket.id);
 
@@ -44,7 +49,8 @@ io.on("connection", (socket) => {
 
     if (room.users.length === 2) {
 
-      const [first, second] = room.users;
+      const [first, second] =
+        room.users;
 
       io.to(first).emit("peer", {
         initiator: true
@@ -56,11 +62,34 @@ io.on("connection", (socket) => {
     }
   });
 
+  /* ---------- SIGNAL ---------- */
+
   socket.on("signal", ({ code, data }) => {
 
-    socket.to(code).emit("signal", data);
-
+    socket.to(code).emit(
+      "signal",
+      data
+    );
   });
+
+  /* ---------- SHARED TRANSFORM ---------- */
+
+  socket.on(
+    "transform",
+    ({ code, posX, posY, scale }) => {
+
+      socket.to(code).emit(
+        "transform",
+        {
+          posX,
+          posY,
+          scale
+        }
+      );
+    }
+  );
+
+  /* ---------- DISCONNECT ---------- */
 
   socket.on("disconnect", () => {
 
@@ -70,18 +99,26 @@ io.on("connection", (socket) => {
 
     const room = rooms[code];
 
-    room.users = room.users.filter(id => id !== socket.id);
+    room.users =
+      room.users.filter(
+        id => id !== socket.id
+      );
 
     socket.to(code).emit("peer_left");
 
     if (room.users.length === 0) {
+
       delete rooms[code];
     }
   });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT =
+  process.env.PORT || 3000;
 
 server.listen(PORT, () => {
-  console.log("running on port " + PORT);
+
+  console.log(
+    "running on port " + PORT
+  );
 });

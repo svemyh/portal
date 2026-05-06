@@ -211,6 +211,12 @@ let pc;
 let currentCode;
 let myUserNumber = null;
 
+/* ---------- SHARED TRANSFORM STATE ---------- */
+
+let scale = 1;
+let posX = 0;
+let posY = 0;
+
 /* ---------- JOIN ---------- */
 
 async function join() {
@@ -270,6 +276,43 @@ socket.on("full", () => {
   location.reload();
 });
 
+/* ---------- TRANSFORM ---------- */
+
+function updateTransform(
+  broadcast = true
+) {
+
+  const remoteVideo =
+    document.getElementById("remote");
+
+  remoteVideo.style.transform = `
+    translate(-50%, -50%)
+    translate(${posX}px, ${posY}px)
+    scale(${scale})
+  `;
+
+  if (broadcast && currentCode) {
+
+    socket.emit("transform", {
+      code: currentCode,
+      posX,
+      posY,
+      scale
+    });
+  }
+}
+
+/* ---------- RECEIVE TRANSFORM ---------- */
+
+socket.on("transform", (data) => {
+
+  posX = data.posX;
+  posY = data.posY;
+  scale = data.scale;
+
+  updateTransform(false);
+});
+
 /* ---------- PEER CONNECT ---------- */
 
 socket.on("peer", async ({ initiator }) => {
@@ -278,14 +321,17 @@ socket.on("peer", async ({ initiator }) => {
     "connecting...";
 
   document.getElementById("label-remote").innerText =
-    "#" + (myUserNumber === 1 ? 2 : 1);
+    "#" + (
+      myUserNumber === 1 ? 2 : 1
+    );
 
   pc = new RTCPeerConnection({
 
     iceServers: [
 
       {
-        urls: "stun:stun.l.google.com:19302"
+        urls:
+          "stun:stun.l.google.com:19302"
       },
 
       {
@@ -302,8 +348,10 @@ socket.on("peer", async ({ initiator }) => {
 
   localStream.getTracks().forEach(track => {
 
-    pc.addTrack(track, localStream);
-
+    pc.addTrack(
+      track,
+      localStream
+    );
   });
 
   /* ---------- BITRATE ---------- */
@@ -315,13 +363,15 @@ socket.on("peer", async ({ initiator }) => {
       sender.track.kind === "video"
     ) {
 
-      const params = sender.getParameters();
+      const params =
+        sender.getParameters();
 
       if (!params.encodings) {
         params.encodings = [{}];
       }
 
-      params.encodings[0].maxBitrate = 500000;
+      params.encodings[0].maxBitrate =
+        500000;
 
       sender.setParameters(params);
     }
@@ -337,21 +387,28 @@ socket.on("peer", async ({ initiator }) => {
     remoteVideo.srcObject =
       event.streams[0];
 
-    remoteVideo.onloadedmetadata = async () => {
+    remoteVideo.onloadedmetadata =
+      async () => {
 
       try {
 
         await remoteVideo.play();
 
-        document.getElementById("status").innerText =
-          "#" + currentCode + " - #" + myUserNumber;
+        document.getElementById(
+          "status"
+        ).innerText =
+          "#" +
+          currentCode +
+          " - #" +
+          myUserNumber;
 
-        document.body.classList.add("connected");
+        document.body.classList.add(
+          "connected"
+        );
 
       } catch (err) {
 
         console.error(err);
-
       }
     };
   };
@@ -363,7 +420,9 @@ socket.on("peer", async ({ initiator }) => {
     if (event.candidate) {
 
       socket.emit("signal", {
+
         code: currentCode,
+
         data: event.candidate
       });
     }
@@ -374,9 +433,14 @@ socket.on("peer", async ({ initiator }) => {
   pc.onconnectionstatechange = () => {
 
     if (
-      pc.connectionState === "disconnected" ||
-      pc.connectionState === "failed" ||
-      pc.connectionState === "closed"
+      pc.connectionState ===
+        "disconnected" ||
+
+      pc.connectionState ===
+        "failed" ||
+
+      pc.connectionState ===
+        "closed"
     ) {
 
       location.reload();
@@ -390,10 +454,14 @@ socket.on("peer", async ({ initiator }) => {
     const offer =
       await pc.createOffer();
 
-    await pc.setLocalDescription(offer);
+    await pc.setLocalDescription(
+      offer
+    );
 
     socket.emit("signal", {
+
       code: currentCode,
+
       data: offer
     });
   }
@@ -414,14 +482,20 @@ socket.on("signal", async (data) => {
     const answer =
       await pc.createAnswer();
 
-    await pc.setLocalDescription(answer);
+    await pc.setLocalDescription(
+      answer
+    );
 
     socket.emit("signal", {
+
       code: currentCode,
+
       data: answer
     });
 
-  } else if (data.type === "answer") {
+  } else if (
+    data.type === "answer"
+  ) {
 
     await pc.setRemoteDescription(
       new RTCSessionDescription(data)
@@ -449,195 +523,228 @@ socket.on("peer_left", () => {
 
 /* ---------- ENTER KEY ---------- */
 
-document.getElementById("code")
+document
+.getElementById("code")
 .addEventListener("keydown", (e) => {
 
   if (e.key === "Enter") {
+
     join();
   }
 });
 
-/* ---------- DRAG + PINCH ---------- */
+/* ---------- REMOTE VIDEO ---------- */
 
 const remoteVideo =
   document.getElementById("remote");
 
-let scale = 1;
-let posX = 0;
-let posY = 0;
+/* ---------- DRAG ---------- */
 
 let startX = 0;
 let startY = 0;
 
 let isDragging = false;
 
-function updateTransform() {
+remoteVideo.addEventListener(
+  "mousedown",
+  (e) => {
 
-  remoteVideo.style.transform = `
-    translate(-50%, -50%)
-    translate(${posX}px, ${posY}px)
-    scale(${scale})
-  `;
-}
+    isDragging = true;
 
-/* DESKTOP DRAG */
+    startX = e.clientX - posX;
+    startY = e.clientY - posY;
 
-remoteVideo.addEventListener("mousedown", (e) => {
+    remoteVideo.style.cursor =
+      "grabbing";
+  }
+);
 
-  isDragging = true;
+window.addEventListener(
+  "mousemove",
+  (e) => {
 
-  startX = e.clientX - posX;
-  startY = e.clientY - posY;
+    if (!isDragging) return;
 
-  remoteVideo.style.cursor = "grabbing";
-});
+    posX = e.clientX - startX;
+    posY = e.clientY - startY;
 
-window.addEventListener("mousemove", (e) => {
+    updateTransform();
+  }
+);
 
-  if (!isDragging) return;
+window.addEventListener(
+  "mouseup",
+  () => {
 
-  posX = e.clientX - startX;
-  posY = e.clientY - startY;
+    isDragging = false;
 
-  updateTransform();
-});
+    remoteVideo.style.cursor =
+      "grab";
+  }
+);
 
-window.addEventListener("mouseup", () => {
+/* ---------- DESKTOP ZOOM ---------- */
 
-  isDragging = false;
-
-  remoteVideo.style.cursor = "grab";
-});
-
-/* DESKTOP ZOOM */
-
-remoteVideo.addEventListener("wheel", (e) => {
-
-  e.preventDefault();
-
-  scale += e.deltaY * -0.001;
-
-  scale = Math.min(
-    Math.max(1, scale),
-    4
-  );
-
-  updateTransform();
-
-}, { passive: false });
-
-/* MOBILE PINCH */
-
-let initialDistance = null;
-
-remoteVideo.addEventListener("touchmove", (e) => {
-
-  if (e.touches.length === 2) {
+remoteVideo.addEventListener(
+  "wheel",
+  (e) => {
 
     e.preventDefault();
 
-    const dx =
-      e.touches[0].clientX -
-      e.touches[1].clientX;
-
-    const dy =
-      e.touches[0].clientY -
-      e.touches[1].clientY;
-
-    const distance =
-      Math.sqrt(dx * dx + dy * dy);
-
-    if (!initialDistance) {
-
-      initialDistance = distance;
-    }
-
-    scale *= distance / initialDistance;
+    scale += e.deltaY * -0.001;
 
     scale = Math.min(
       Math.max(1, scale),
       4
     );
 
-    initialDistance = distance;
-
     updateTransform();
+
+  },
+  { passive: false }
+);
+
+/* ---------- MOBILE PINCH ---------- */
+
+let initialDistance = null;
+
+remoteVideo.addEventListener(
+  "touchmove",
+  (e) => {
+
+    if (e.touches.length === 2) {
+
+      e.preventDefault();
+
+      const dx =
+        e.touches[0].clientX -
+        e.touches[1].clientX;
+
+      const dy =
+        e.touches[0].clientY -
+        e.touches[1].clientY;
+
+      const distance =
+        Math.sqrt(dx * dx + dy * dy);
+
+      if (!initialDistance) {
+
+        initialDistance =
+          distance;
+      }
+
+      scale *=
+        distance /
+        initialDistance;
+
+      scale = Math.min(
+        Math.max(1, scale),
+        4
+      );
+
+      initialDistance =
+        distance;
+
+      updateTransform();
+    }
+
+  },
+  { passive: false }
+);
+
+remoteVideo.addEventListener(
+  "touchend",
+  () => {
+
+    initialDistance = null;
   }
+);
 
-}, { passive: false });
-
-remoteVideo.addEventListener("touchend", () => {
-
-  initialDistance = null;
-});
-
-/* MOBILE DRAG */
+/* ---------- MOBILE DRAG ---------- */
 
 let touchStartX = 0;
 let touchStartY = 0;
 
-remoteVideo.addEventListener("touchstart", (e) => {
+remoteVideo.addEventListener(
+  "touchstart",
+  (e) => {
 
-  if (e.touches.length === 1) {
+    if (e.touches.length === 1) {
 
-    touchStartX =
-      e.touches[0].clientX - posX;
+      touchStartX =
+        e.touches[0].clientX -
+        posX;
 
-    touchStartY =
-      e.touches[0].clientY - posY;
-  }
+      touchStartY =
+        e.touches[0].clientY -
+        posY;
+    }
 
-}, { passive: false });
+  },
+  { passive: false }
+);
 
-remoteVideo.addEventListener("touchmove", (e) => {
+remoteVideo.addEventListener(
+  "touchmove",
+  (e) => {
 
-  if (e.touches.length === 1) {
+    if (e.touches.length === 1) {
 
-    posX =
-      e.touches[0].clientX - touchStartX;
+      posX =
+        e.touches[0].clientX -
+        touchStartX;
 
-    posY =
-      e.touches[0].clientY - touchStartY;
+      posY =
+        e.touches[0].clientY -
+        touchStartY;
 
-    updateTransform();
-  }
+      updateTransform();
+    }
 
-}, { passive: false });
+  },
+  { passive: false }
+);
 
-/* ---------- DOUBLE TAP FULLSCREEN ---------- */
+/* ---------- DOUBLE TAP ---------- */
 
 let lastTap = 0;
 
-remoteVideo.addEventListener("touchend", async () => {
+remoteVideo.addEventListener(
+  "touchend",
+  async () => {
 
-  const now = Date.now();
+    const now = Date.now();
 
-  if (now - lastTap < 300) {
+    if (now - lastTap < 300) {
 
-    if (!document.fullscreenElement) {
+      if (
+        !document.fullscreenElement
+      ) {
 
-      try {
+        try {
 
-        await remoteVideo.requestFullscreen();
+          await remoteVideo
+          .requestFullscreen();
 
-      } catch {}
+        } catch {}
 
-    } else {
+      } else {
 
-      document.exitFullscreen();
-
+        document.exitFullscreen();
+      }
     }
-  }
 
-  lastTap = now;
-});
+    lastTap = now;
+  }
+);
 
 /* ---------- FOCUS ---------- */
 
 window.onload = () => {
 
-  document.getElementById("code").focus();
-
+  document
+  .getElementById("code")
+  .focus();
 };
 
 </script>
