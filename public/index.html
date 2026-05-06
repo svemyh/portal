@@ -29,6 +29,8 @@ body {
   min-height: 100dvh;
 
   overflow: hidden;
+
+  touch-action: none;
 }
 
 #container {
@@ -107,13 +109,18 @@ button {
   top: 50%;
   left: 50%;
 
-  width: 800px;
-  height: 800px;
+  width: 575px;
+  height: 575px;
 
-  max-width: 100vw;
-  max-height: 100dvh;
+  max-width: 95vw;
+  max-height: 95vw;
 
-  transform: translate(-50%, -50%) scale(1);
+  transform:
+    translate(-50%, -50%)
+    translate(0px, 0px)
+    scale(1);
+
+  transform-origin: center center;
 
   object-fit: cover;
 
@@ -121,19 +128,24 @@ button {
 
   z-index: 999;
 
+  cursor: grab;
+
   touch-action: none;
+
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
 /* MOBILE */
 
-@media (max-width: 900px) {
+@media (max-width: 700px) {
 
   .connected #remote {
 
-    width: 100vw;
-    height: 100vw;
+    width: 575px;
+    height: 575px;
 
-    max-height: 100dvh;
+    max-width: 90vw;
+    max-height: 90vw;
   }
 }
 
@@ -294,7 +306,7 @@ socket.on("peer", async ({ initiator }) => {
 
   });
 
-  /* ---------- BITRATE STABILIZATION ---------- */
+  /* ---------- BITRATE ---------- */
 
   pc.getSenders().forEach(sender => {
 
@@ -357,7 +369,7 @@ socket.on("peer", async ({ initiator }) => {
     }
   };
 
-  /* ---------- CONNECTION MONITOR ---------- */
+  /* ---------- CONNECTION ---------- */
 
   pc.onconnectionstatechange = () => {
 
@@ -445,26 +457,150 @@ document.getElementById("code")
   }
 });
 
-/* ---------- PINCH / ZOOM ---------- */
+/* ---------- DRAG + PINCH ---------- */
 
 const remoteVideo =
   document.getElementById("remote");
 
-let currentScale = 1;
+let scale = 1;
+let posX = 0;
+let posY = 0;
+
+let startX = 0;
+let startY = 0;
+
+let isDragging = false;
+
+function updateTransform() {
+
+  remoteVideo.style.transform = `
+    translate(-50%, -50%)
+    translate(${posX}px, ${posY}px)
+    scale(${scale})
+  `;
+}
+
+/* DESKTOP DRAG */
+
+remoteVideo.addEventListener("mousedown", (e) => {
+
+  isDragging = true;
+
+  startX = e.clientX - posX;
+  startY = e.clientY - posY;
+
+  remoteVideo.style.cursor = "grabbing";
+});
+
+window.addEventListener("mousemove", (e) => {
+
+  if (!isDragging) return;
+
+  posX = e.clientX - startX;
+  posY = e.clientY - startY;
+
+  updateTransform();
+});
+
+window.addEventListener("mouseup", () => {
+
+  isDragging = false;
+
+  remoteVideo.style.cursor = "grab";
+});
+
+/* DESKTOP ZOOM */
 
 remoteVideo.addEventListener("wheel", (e) => {
 
   e.preventDefault();
 
-  currentScale += e.deltaY * -0.001;
+  scale += e.deltaY * -0.001;
 
-  currentScale = Math.min(
-    Math.max(1, currentScale),
+  scale = Math.min(
+    Math.max(1, scale),
     4
   );
 
-  remoteVideo.style.transform =
-    `translate(-50%, -50%) scale(${currentScale})`;
+  updateTransform();
+
+}, { passive: false });
+
+/* MOBILE PINCH */
+
+let initialDistance = null;
+
+remoteVideo.addEventListener("touchmove", (e) => {
+
+  if (e.touches.length === 2) {
+
+    e.preventDefault();
+
+    const dx =
+      e.touches[0].clientX -
+      e.touches[1].clientX;
+
+    const dy =
+      e.touches[0].clientY -
+      e.touches[1].clientY;
+
+    const distance =
+      Math.sqrt(dx * dx + dy * dy);
+
+    if (!initialDistance) {
+
+      initialDistance = distance;
+    }
+
+    scale *= distance / initialDistance;
+
+    scale = Math.min(
+      Math.max(1, scale),
+      4
+    );
+
+    initialDistance = distance;
+
+    updateTransform();
+  }
+
+}, { passive: false });
+
+remoteVideo.addEventListener("touchend", () => {
+
+  initialDistance = null;
+});
+
+/* MOBILE DRAG */
+
+let touchStartX = 0;
+let touchStartY = 0;
+
+remoteVideo.addEventListener("touchstart", (e) => {
+
+  if (e.touches.length === 1) {
+
+    touchStartX =
+      e.touches[0].clientX - posX;
+
+    touchStartY =
+      e.touches[0].clientY - posY;
+  }
+
+}, { passive: false });
+
+remoteVideo.addEventListener("touchmove", (e) => {
+
+  if (e.touches.length === 1) {
+
+    posX =
+      e.touches[0].clientX - touchStartX;
+
+    posY =
+      e.touches[0].clientY - touchStartY;
+
+    updateTransform();
+  }
 
 }, { passive: false });
 
