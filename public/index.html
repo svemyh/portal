@@ -1,23 +1,33 @@
 <!DOCTYPE html>
 <html>
 <head>
+
 <meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
 <title>portal</title>
 
 <style>
 
 * {
   font-family: "Courier New", Courier, monospace;
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
   background: black;
   color: white;
+
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
+
+  min-height: 100vh;
+  min-height: 100dvh;
+
   overflow: hidden;
 }
 
@@ -27,11 +37,15 @@ body {
 
 #title {
   position: absolute;
+
   top: 20px;
   left: 50%;
+
   transform: translateX(-50%);
+
   font-size: 14px;
   letter-spacing: 1px;
+
   z-index: 1001;
 }
 
@@ -43,77 +57,88 @@ body {
 video {
   width: 40vw;
   max-width: 400px;
+
   margin: 10px;
+
   background: black;
 }
 
 input {
   background: black;
   color: white;
+
   border: 1px solid white;
+
   padding: 10px;
 }
 
 button {
   margin-left: 10px;
+
   padding: 10px;
+
   background: white;
   color: black;
+
   border: none;
+
   cursor: pointer;
 }
 
 #status {
   position: relative;
   z-index: 1001;
+
   margin: 10px 0;
 }
 
-.connected #local {
-  display: none;
-}
+/* CONNECTED STATE */
 
-.connected #label-local {
-  display: none;
-}
-
+.connected #local,
+.connected #label-local,
 .connected #label-remote {
   display: none;
 }
 
 .connected #remote {
-  position: fixed;
-  inset: 0;
 
-  width: 100%;
-  height: 100%;
+  position: fixed;
+
+  top: 50%;
+  left: 50%;
+
+  width: 800px;
+  height: 800px;
+
+  max-width: 100vw;
+  max-height: 100dvh;
+
+  transform: translate(-50%, -50%) scale(1);
+
+  object-fit: cover;
 
   background: black;
 
   z-index: 999;
-}
 
-/* DESKTOP */
-@media (min-width: 769px) {
-
-  .connected #remote {
-
-    object-fit: cover;
-  }
+  touch-action: none;
 }
 
 /* MOBILE */
-@media (max-width: 768px) {
+
+@media (max-width: 900px) {
 
   .connected #remote {
 
-    object-fit: contain;
+    width: 100vw;
+    height: 100vw;
+
+    max-height: 100dvh;
   }
 }
 
 </style>
 </head>
-
 
 <body>
 
@@ -125,8 +150,15 @@ button {
   </div>
 
   <div id="entry">
-    <input id="code" placeholder="enter code" />
-    <button onclick="join()">enter</button>
+
+    <input
+      id="code"
+      placeholder="enter code" />
+
+    <button onclick="join()">
+      enter
+    </button>
+
   </div>
 
   <div id="stage" style="display:none;">
@@ -140,7 +172,9 @@ button {
       playsinline>
     </video>
 
-    <div id="status">waiting...</div>
+    <div id="status">
+      waiting...
+    </div>
 
     <div id="label-remote">#?</div>
 
@@ -164,6 +198,8 @@ let localStream;
 let pc;
 let currentCode;
 let myUserNumber = null;
+
+/* ---------- JOIN ---------- */
 
 async function join() {
 
@@ -203,6 +239,8 @@ async function join() {
   socket.emit("join", code);
 }
 
+/* ---------- USER ASSIGNMENT ---------- */
+
 socket.on("assigned", ({ userNumber }) => {
 
   myUserNumber = userNumber;
@@ -211,12 +249,16 @@ socket.on("assigned", ({ userNumber }) => {
     "#" + userNumber;
 });
 
+/* ---------- ROOM FULL ---------- */
+
 socket.on("full", () => {
 
   alert("room full");
 
   location.reload();
 });
+
+/* ---------- PEER CONNECT ---------- */
 
 socket.on("peer", async ({ initiator }) => {
 
@@ -226,7 +268,6 @@ socket.on("peer", async ({ initiator }) => {
   document.getElementById("label-remote").innerText =
     "#" + (myUserNumber === 1 ? 2 : 1);
 
-  // STABLE HYBRID CONFIG
   pc = new RTCPeerConnection({
 
     iceServers: [
@@ -253,7 +294,8 @@ socket.on("peer", async ({ initiator }) => {
 
   });
 
-  // stabilize bitrate
+  /* ---------- BITRATE STABILIZATION ---------- */
+
   pc.getSenders().forEach(sender => {
 
     if (
@@ -272,6 +314,8 @@ socket.on("peer", async ({ initiator }) => {
       sender.setParameters(params);
     }
   });
+
+  /* ---------- REMOTE STREAM ---------- */
 
   pc.ontrack = (event) => {
 
@@ -300,6 +344,8 @@ socket.on("peer", async ({ initiator }) => {
     };
   };
 
+  /* ---------- ICE ---------- */
+
   pc.onicecandidate = (event) => {
 
     if (event.candidate) {
@@ -310,6 +356,8 @@ socket.on("peer", async ({ initiator }) => {
       });
     }
   };
+
+  /* ---------- CONNECTION MONITOR ---------- */
 
   pc.onconnectionstatechange = () => {
 
@@ -322,6 +370,8 @@ socket.on("peer", async ({ initiator }) => {
       location.reload();
     }
   };
+
+  /* ---------- OFFER ---------- */
 
   if (initiator) {
 
@@ -336,6 +386,8 @@ socket.on("peer", async ({ initiator }) => {
     });
   }
 });
+
+/* ---------- SIGNALING ---------- */
 
 socket.on("signal", async (data) => {
 
@@ -375,14 +427,16 @@ socket.on("signal", async (data) => {
   }
 });
 
-// refresh if peer leaves
+/* ---------- PEER LEFT ---------- */
+
 socket.on("peer_left", () => {
 
   location.reload();
 
 });
 
-// enter key support
+/* ---------- ENTER KEY ---------- */
+
 document.getElementById("code")
 .addEventListener("keydown", (e) => {
 
@@ -390,6 +444,59 @@ document.getElementById("code")
     join();
   }
 });
+
+/* ---------- PINCH / ZOOM ---------- */
+
+const remoteVideo =
+  document.getElementById("remote");
+
+let currentScale = 1;
+
+remoteVideo.addEventListener("wheel", (e) => {
+
+  e.preventDefault();
+
+  currentScale += e.deltaY * -0.001;
+
+  currentScale = Math.min(
+    Math.max(1, currentScale),
+    4
+  );
+
+  remoteVideo.style.transform =
+    `translate(-50%, -50%) scale(${currentScale})`;
+
+}, { passive: false });
+
+/* ---------- DOUBLE TAP FULLSCREEN ---------- */
+
+let lastTap = 0;
+
+remoteVideo.addEventListener("touchend", async () => {
+
+  const now = Date.now();
+
+  if (now - lastTap < 300) {
+
+    if (!document.fullscreenElement) {
+
+      try {
+
+        await remoteVideo.requestFullscreen();
+
+      } catch {}
+
+    } else {
+
+      document.exitFullscreen();
+
+    }
+  }
+
+  lastTap = now;
+});
+
+/* ---------- FOCUS ---------- */
 
 window.onload = () => {
 
