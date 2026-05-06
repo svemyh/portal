@@ -18,7 +18,6 @@ body {
   justify-content: center;
   align-items: center;
   height: 100vh;
-  overflow: hidden;
 }
 
 #container {
@@ -31,8 +30,6 @@ body {
   left: 50%;
   transform: translateX(-50%);
   font-size: 14px;
-  letter-spacing: 1px;
-  z-index: 1001;
 }
 
 #title span {
@@ -64,19 +61,11 @@ button {
 }
 
 #status {
-  position: relative;
-  z-index: 1001;
   margin: 10px 0;
 }
 
-.connected #local {
-  display: none;
-}
-
-.connected #label-local {
-  display: none;
-}
-
+.connected #local,
+.connected #label-local,
 .connected #label-remote {
   display: none;
 }
@@ -89,7 +78,6 @@ button {
   height: 100vh;
   transform: translate(-50%, -50%);
   object-fit: cover;
-  z-index: 999;
   background: black;
 }
 
@@ -102,7 +90,7 @@ button {
 
   <div id="title">
     portal<br>
-    <span>v0.0.2</span>
+    <span>v0.0.2 TURN TEST</span>
   </div>
 
   <div id="entry">
@@ -114,22 +102,13 @@ button {
 
     <div id="label-local">#?</div>
 
-    <video
-      id="local"
-      autoplay
-      muted
-      playsinline>
-    </video>
+    <video id="local" autoplay muted playsinline></video>
 
     <div id="status">waiting...</div>
 
     <div id="label-remote">#?</div>
 
-    <video
-      id="remote"
-      autoplay
-      playsinline>
-    </video>
+    <video id="remote" autoplay playsinline></video>
 
   </div>
 
@@ -178,9 +157,6 @@ async function join() {
   document.getElementById("stage").style.display =
     "block";
 
-  document.getElementById("status").innerText =
-    "waiting...";
-
   socket.emit("join", code);
 }
 
@@ -192,34 +168,24 @@ socket.on("assigned", ({ userNumber }) => {
     "#" + userNumber;
 });
 
-socket.on("full", () => {
-
-  alert("room full");
-
-  location.reload();
-});
-
 socket.on("peer", async ({ initiator }) => {
 
   document.getElementById("status").innerText =
-    "connecting...";
+    "testing TURN relay...";
 
   document.getElementById("label-remote").innerText =
     "#" + (myUserNumber === 1 ? 2 : 1);
 
-  // STABLE HYBRID CONFIG
   pc = new RTCPeerConnection({
+
+    iceTransportPolicy: "relay",
 
     iceServers: [
 
       {
-        urls: "stun:stun.l.google.com:19302"
-      },
-
-      {
         urls: [
-          "turn:YOUR_REAL_VULTR_IP:3478?transport=udp",
-          "turn:YOUR_REAL_VULTR_IP:3478?transport=tcp"
+          "turn:45.63.22.171:3478?transport=udp",
+          "turn:45.63.22.171:3478?transport=tcp"
         ],
 
         username: "portal",
@@ -232,26 +198,6 @@ socket.on("peer", async ({ initiator }) => {
 
     pc.addTrack(track, localStream);
 
-  });
-
-  // stabilize bitrate
-  pc.getSenders().forEach(sender => {
-
-    if (
-      sender.track &&
-      sender.track.kind === "video"
-    ) {
-
-      const params = sender.getParameters();
-
-      if (!params.encodings) {
-        params.encodings = [{}];
-      }
-
-      params.encodings[0].maxBitrate = 500000;
-
-      sender.setParameters(params);
-    }
   });
 
   pc.ontrack = (event) => {
@@ -269,7 +215,7 @@ socket.on("peer", async ({ initiator }) => {
         await remoteVideo.play();
 
         document.getElementById("status").innerText =
-          "#" + currentCode + " - #" + myUserNumber;
+          "TURN relay connected";
 
         document.body.classList.add("connected");
 
@@ -293,6 +239,8 @@ socket.on("peer", async ({ initiator }) => {
   };
 
   pc.onconnectionstatechange = () => {
+
+    console.log(pc.connectionState);
 
     if (
       pc.connectionState === "disconnected" ||
@@ -356,14 +304,12 @@ socket.on("signal", async (data) => {
   }
 });
 
-// refresh if peer leaves
 socket.on("peer_left", () => {
 
   location.reload();
 
 });
 
-// enter key support
 document.getElementById("code")
 .addEventListener("keydown", (e) => {
 
