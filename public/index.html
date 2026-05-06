@@ -106,7 +106,7 @@ button {
   </div>
 
   <div id="entry">
-    <input id="code" placeholder="code" />
+    <input id="code" placeholder="enter code" />
     <button onclick="join()">enter</button>
   </div>
 
@@ -207,25 +207,26 @@ socket.on("peer", async ({ initiator }) => {
   document.getElementById("label-remote").innerText =
     "#" + (myUserNumber === 1 ? 2 : 1);
 
+  // RESTORED HYBRID CONFIG
   pc = new RTCPeerConnection({
 
-  // FORCE TURN RELAY ONLY
-  iceTransportPolicy: "relay",
+    iceServers: [
 
-  iceServers: [
+      {
+        urls: "stun:stun.l.google.com:19302"
+      },
 
-    {
-      urls: [
-        "turn:YOUR_VULTR_IP:3478?transport=udp",
-        "turn:YOUR_VULTR_IP:3478?transport=tcp"
-      ],
+      {
+        urls: [
+          "turn:YOUR_VULTR_IP:3478?transport=udp",
+          "turn:YOUR_VULTR_IP:3478?transport=tcp"
+        ],
 
-      username: "portal",
-      credential: "portal_password"
-    }
-
-  ]
-});
+        username: "portal",
+        credential: "portal_password"
+      }
+    ]
+  });
 
   localStream.getTracks().forEach(track => {
 
