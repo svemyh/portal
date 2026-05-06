@@ -94,6 +94,27 @@ button {
   margin: 10px 0;
 }
 
+#modeFlash {
+
+  position: fixed;
+
+  top: 50%;
+  left: 50%;
+
+  transform: translate(-50%, -50%);
+
+  font-size: 16px;
+  letter-spacing: 2px;
+
+  opacity: 0;
+
+  pointer-events: none;
+
+  z-index: 2000;
+
+  transition: opacity 0.2s ease;
+}
+
 /* CONNECTED STATE */
 
 .connected #local,
@@ -154,11 +175,13 @@ button {
 
 <body>
 
+<div id="modeFlash"></div>
+
 <div id="container">
 
   <div id="title">
     portal<br>
-    <span>v0.0.3</span>
+    <span>v0.0.4</span>
   </div>
 
   <div id="entry">
@@ -211,7 +234,11 @@ let pc;
 let currentCode;
 let myUserNumber = null;
 
-/* ---------- REMOTE CONTROL STATE ---------- */
+/* ---------- CONTROL MODE ---------- */
+
+let controlMode = "local";
+
+/* ---------- TRANSFORM STATE ---------- */
 
 let scale = 1;
 let posX = 0;
@@ -276,7 +303,42 @@ socket.on("full", () => {
   location.reload();
 });
 
-/* ---------- REMOTE TRANSFORM RECEIVE ---------- */
+/* ---------- APPLY LOCAL TRANSFORM ---------- */
+
+function applyTransform() {
+
+  const remoteVideo =
+    document.getElementById("remote");
+
+  remoteVideo.style.transform = `
+    translate(-50%, -50%)
+    translate(${posX}px, ${posY}px)
+    scale(${scale})
+  `;
+}
+
+/* ---------- UPDATE TRANSFORM ---------- */
+
+function updateTransform() {
+
+  if (controlMode === "local") {
+
+    applyTransform();
+
+  } else {
+
+    socket.emit("transform", {
+
+      code: currentCode,
+
+      posX,
+      posY,
+      scale
+    });
+  }
+}
+
+/* ---------- RECEIVE REMOTE CONTROL ---------- */
 
 socket.on("transform", (data) => {
 
@@ -290,18 +352,37 @@ socket.on("transform", (data) => {
   `;
 });
 
-/* ---------- SEND TRANSFORM ---------- */
+/* ---------- MODE FLASH ---------- */
 
-function updateTransform() {
+function flashMode() {
 
-  socket.emit("transform", {
+  const flash =
+    document.getElementById("modeFlash");
 
-    code: currentCode,
+  flash.innerText =
+    controlMode.toUpperCase();
 
-    posX,
-    posY,
-    scale
-  });
+  flash.style.opacity = "1";
+
+  clearTimeout(flash.timeout);
+
+  flash.timeout = setTimeout(() => {
+
+    flash.style.opacity = "0";
+
+  }, 800);
+}
+
+/* ---------- TOGGLE MODE ---------- */
+
+function toggleMode() {
+
+  controlMode =
+    controlMode === "local"
+      ? "remote"
+      : "local";
+
+  flashMode();
 }
 
 /* ---------- PEER CONNECT ---------- */
@@ -574,6 +655,16 @@ window.addEventListener(
   }
 );
 
+/* ---------- DESKTOP DOUBLE CLICK ---------- */
+
+remoteVideo.addEventListener(
+  "dblclick",
+  () => {
+
+    toggleMode();
+  }
+);
+
 /* ---------- DESKTOP ZOOM ---------- */
 
 remoteVideo.addEventListener(
@@ -696,33 +787,19 @@ remoteVideo.addEventListener(
   { passive: false }
 );
 
-/* ---------- DOUBLE TAP ---------- */
+/* ---------- MOBILE DOUBLE TAP ---------- */
 
 let lastTap = 0;
 
 remoteVideo.addEventListener(
   "touchend",
-  async () => {
+  () => {
 
     const now = Date.now();
 
     if (now - lastTap < 300) {
 
-      if (
-        !document.fullscreenElement
-      ) {
-
-        try {
-
-          await remoteVideo
-          .requestFullscreen();
-
-        } catch {}
-
-      } else {
-
-        document.exitFullscreen();
-      }
+      toggleMode();
     }
 
     lastTap = now;
