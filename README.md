@@ -8,11 +8,11 @@ LIVE URL : https://portal.maxis.fit
 
 TO USE :
 
-* if #1 (initiator) designate a code and share it with #2.
+* if #1, [initiator] designate a code and share it with #2.
 * if #2, type in code exactly as given including spaces and capitalization.
 * the page will refresh if the connection is interrupted for any reason
   and the connection will have to be reinitiated.
-* rooms can only contain two users [v0.0.1].
+* rooms can only contain two users [v0.0.1 + v0.0.2] => multi-user rooms coming in [v0.0.3].
 * refresh to disconnect.
   
 
