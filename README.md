@@ -12,10 +12,14 @@ TO USE :
 * if #2, type in code exactly as given including spaces and capitalization.
 * the page will refresh if the connection is interrupted for any reason
   and the connection will have to be reinitiated.
-* rooms can only contain two users [v0.0.1 + v0.0.2] => multi-user rooms coming in [v0.0.3].
+* rooms can only contain two users; multi-user rooms coming in [v0.0.5].
+* when connected each portal is 575x575; pinch to zoom & you can drag the box
+  across the page; double tap/click and you gain remote control over the other
+  persons zoom and location.
 * refresh to disconnect.
   
 
 NOTES :
 
-* currently unknown how many rooms can exist at once, likely low due to render limitations [currently running on the free plan].
+* currently unknown how many rooms can exist at once, likely low due to render limitations [currently running on the  free plan].
+* three user rooms are currently experimental.
