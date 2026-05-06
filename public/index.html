@@ -18,7 +18,6 @@ body {
   justify-content: center;
   align-items: center;
   height: 100vh;
-  overflow: hidden;
 }
 
 #container {
@@ -31,8 +30,6 @@ body {
   left: 50%;
   transform: translateX(-50%);
   font-size: 14px;
-  letter-spacing: 1px;
-  z-index: 1001;
 }
 
 #title span {
@@ -64,19 +61,11 @@ button {
 }
 
 #status {
-  position: relative;
-  z-index: 1001;
   margin: 10px 0;
 }
 
-.connected #local {
-  display: none;
-}
-
-.connected #label-local {
-  display: none;
-}
-
+.connected #local,
+.connected #label-local,
 .connected #label-remote {
   display: none;
 }
@@ -85,11 +74,10 @@ button {
   position: fixed;
   top: 50%;
   left: 50%;
-  height: 100vh;
   width: 100vw;
+  height: 100vh;
   transform: translate(-50%, -50%);
   object-fit: cover;
-  z-index: 999;
   background: black;
 }
 
@@ -114,22 +102,13 @@ button {
 
     <div id="label-local">#?</div>
 
-    <video
-      id="local"
-      autoplay
-      muted
-      playsinline>
-    </video>
+    <video id="local" autoplay muted playsinline></video>
 
     <div id="status">waiting...</div>
 
     <div id="label-remote">#?</div>
 
-    <video
-      id="remote"
-      autoplay
-      playsinline>
-    </video>
+    <video id="remote" autoplay playsinline></video>
 
   </div>
 
@@ -178,9 +157,6 @@ async function join() {
   document.getElementById("stage").style.display =
     "block";
 
-  document.getElementById("status").innerText =
-    "waiting...";
-
   socket.emit("join", code);
 }
 
@@ -192,22 +168,14 @@ socket.on("assigned", ({ userNumber }) => {
     "#" + userNumber;
 });
 
-socket.on("full", () => {
-
-  alert("room full");
-
-  location.reload();
-});
-
 socket.on("peer", async ({ initiator }) => {
 
   document.getElementById("status").innerText =
-    "connecting via TURN...";
+    "testing TURN relay...";
 
   document.getElementById("label-remote").innerText =
     "#" + (myUserNumber === 1 ? 2 : 1);
 
-  // FORCE TURN RELAY TEST
   pc = new RTCPeerConnection({
 
     iceTransportPolicy: "relay",
@@ -220,13 +188,11 @@ socket.on("peer", async ({ initiator }) => {
           "turn:YOUR_VULTR_IP:3478?transport=tcp"
         ],
 
-        username: "root",
-        credential: "2=Ru,]WYA,C}x+NX"
+        username: "portal",
+        credential: "portal_password"
       }
     ]
   });
-
-  console.log("TURN TEST ACTIVE");
 
   localStream.getTracks().forEach(track => {
 
@@ -234,47 +200,36 @@ socket.on("peer", async ({ initiator }) => {
 
   });
 
-  // stabilize bitrate
-  pc.getSenders().forEach(sender => {
-
-    if (
-      sender.track &&
-      sender.track.kind === "video"
-    ) {
-
-      const params = sender.getParameters();
-
-      if (!params.encodings) {
-        params.encodings = [{}];
-      }
-
-      params.encodings[0].maxBitrate = 500000;
-
-      sender.setParameters(params);
-    }
-  });
-
   pc.ontrack = (event) => {
 
-    console.log("TURN RELAY CONNECTED");
+    const remoteVideo =
+      document.getElementById("remote");
 
-    document.getElementById("remote").srcObject =
+    remoteVideo.srcObject =
       event.streams[0];
 
-    document.getElementById("status").innerText =
-      "TURN RELAY ACTIVE";
+    remoteVideo.onloadedmetadata = async () => {
 
-    document.body.classList.add("connected");
+      try {
+
+        await remoteVideo.play();
+
+        document.getElementById("status").innerText =
+          "TURN relay connected";
+
+        document.body.classList.add("connected");
+
+      } catch (err) {
+
+        console.error(err);
+
+      }
+    };
   };
 
   pc.onicecandidate = (event) => {
 
     if (event.candidate) {
-
-      console.log(
-        "ICE:",
-        event.candidate.candidate
-      );
 
       socket.emit("signal", {
         code: currentCode,
@@ -283,20 +238,9 @@ socket.on("peer", async ({ initiator }) => {
     }
   };
 
-  pc.oniceconnectionstatechange = () => {
-
-    console.log(
-      "ICE STATE:",
-      pc.iceConnectionState
-    );
-  };
-
   pc.onconnectionstatechange = () => {
 
-    console.log(
-      "CONNECTION STATE:",
-      pc.connectionState
-    );
+    console.log(pc.connectionState);
 
     if (
       pc.connectionState === "disconnected" ||
@@ -328,8 +272,6 @@ socket.on("signal", async (data) => {
 
   if (data.type === "offer") {
 
-    console.log("OFFER RECEIVED");
-
     await pc.setRemoteDescription(
       new RTCSessionDescription(data)
     );
@@ -346,15 +288,11 @@ socket.on("signal", async (data) => {
 
   } else if (data.type === "answer") {
 
-    console.log("ANSWER RECEIVED");
-
     await pc.setRemoteDescription(
       new RTCSessionDescription(data)
     );
 
   } else {
-
-    console.log("ICE RECEIVED");
 
     try {
 
@@ -362,22 +300,16 @@ socket.on("signal", async (data) => {
         new RTCIceCandidate(data)
       );
 
-    } catch (err) {
-
-      console.error(err);
-
-    }
+    } catch {}
   }
 });
 
-// refresh if peer leaves
 socket.on("peer_left", () => {
 
   location.reload();
 
 });
 
-// enter key support
 document.getElementById("code")
 .addEventListener("keydown", (e) => {
 
