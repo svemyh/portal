@@ -158,7 +158,7 @@ button {
 
   <div id="title">
     portal<br>
-    <span>v0.0.2</span>
+    <span>v0.0.3</span>
   </div>
 
   <div id="entry">
@@ -211,7 +211,7 @@ let pc;
 let currentCode;
 let myUserNumber = null;
 
-/* ---------- SHARED TRANSFORM STATE ---------- */
+/* ---------- REMOTE CONTROL STATE ---------- */
 
 let scale = 1;
 let posX = 0;
@@ -276,42 +276,33 @@ socket.on("full", () => {
   location.reload();
 });
 
-/* ---------- TRANSFORM ---------- */
+/* ---------- REMOTE TRANSFORM RECEIVE ---------- */
 
-function updateTransform(
-  broadcast = true
-) {
+socket.on("transform", (data) => {
 
   const remoteVideo =
     document.getElementById("remote");
 
   remoteVideo.style.transform = `
     translate(-50%, -50%)
-    translate(${posX}px, ${posY}px)
-    scale(${scale})
+    translate(${data.posX}px, ${data.posY}px)
+    scale(${data.scale})
   `;
-
-  if (broadcast && currentCode) {
-
-    socket.emit("transform", {
-      code: currentCode,
-      posX,
-      posY,
-      scale
-    });
-  }
-}
-
-/* ---------- RECEIVE TRANSFORM ---------- */
-
-socket.on("transform", (data) => {
-
-  posX = data.posX;
-  posY = data.posY;
-  scale = data.scale;
-
-  updateTransform(false);
 });
+
+/* ---------- SEND TRANSFORM ---------- */
+
+function updateTransform() {
+
+  socket.emit("transform", {
+
+    code: currentCode,
+
+    posX,
+    posY,
+    scale
+  });
+}
 
 /* ---------- PEER CONNECT ---------- */
 

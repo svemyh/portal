@@ -72,7 +72,7 @@ io.on("connection", (socket) => {
     );
   });
 
-  /* ---------- SHARED TRANSFORM ---------- */
+  /* ---------- REMOTE TRANSFORM ---------- */
 
   socket.on(
     "transform",
