@@ -209,23 +209,23 @@ socket.on("peer", async ({ initiator }) => {
 
   pc = new RTCPeerConnection({
 
-    iceServers: [
+  // FORCE TURN RELAY ONLY
+  iceTransportPolicy: "relay",
 
-      {
-        urls: "stun:stun.l.google.com:19302"
-      },
+  iceServers: [
 
-      {
-        urls: [
-          "stun:root:3478",
-          "turn:root:3478"
-        ],
+    {
+      urls: [
+        "turn:YOUR_VULTR_IP:3478?transport=udp",
+        "turn:YOUR_VULTR_IP:3478?transport=tcp"
+      ],
 
-        username: "root",
-        credential: "2=Ru,]WYA,C}x+NX"
-      }
-    ]
-  });
+      username: "portal",
+      credential: "portal_password"
+    }
+
+  ]
+});
 
   localStream.getTracks().forEach(track => {
 
