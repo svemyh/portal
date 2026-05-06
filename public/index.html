@@ -102,7 +102,7 @@ button {
 
   <div id="title">
     portal<br>
-    <span>v0.0.2</span>
+    <span>v0.0.2 TURN TEST</span>
   </div>
 
   <div id="entry">
@@ -202,19 +202,17 @@ socket.on("full", () => {
 socket.on("peer", async ({ initiator }) => {
 
   document.getElementById("status").innerText =
-    "connecting...";
+    "connecting via TURN...";
 
   document.getElementById("label-remote").innerText =
     "#" + (myUserNumber === 1 ? 2 : 1);
 
-  // RESTORED HYBRID CONFIG
+  // FORCE TURN RELAY TEST
   pc = new RTCPeerConnection({
 
-    iceServers: [
+    iceTransportPolicy: "relay",
 
-      {
-        urls: "stun:stun.l.google.com:19302"
-      },
+    iceServers: [
 
       {
         urls: [
@@ -227,6 +225,8 @@ socket.on("peer", async ({ initiator }) => {
       }
     ]
   });
+
+  console.log("TURN TEST ACTIVE");
 
   localStream.getTracks().forEach(track => {
 
@@ -256,11 +256,13 @@ socket.on("peer", async ({ initiator }) => {
 
   pc.ontrack = (event) => {
 
+    console.log("TURN RELAY CONNECTED");
+
     document.getElementById("remote").srcObject =
       event.streams[0];
 
     document.getElementById("status").innerText =
-      "#" + currentCode + " - #" + myUserNumber;
+      "TURN RELAY ACTIVE";
 
     document.body.classList.add("connected");
   };
@@ -269,6 +271,11 @@ socket.on("peer", async ({ initiator }) => {
 
     if (event.candidate) {
 
+      console.log(
+        "ICE:",
+        event.candidate.candidate
+      );
+
       socket.emit("signal", {
         code: currentCode,
         data: event.candidate
@@ -276,14 +283,27 @@ socket.on("peer", async ({ initiator }) => {
     }
   };
 
-  // auto refresh if connection dies
+  pc.oniceconnectionstatechange = () => {
+
+    console.log(
+      "ICE STATE:",
+      pc.iceConnectionState
+    );
+  };
+
   pc.onconnectionstatechange = () => {
+
+    console.log(
+      "CONNECTION STATE:",
+      pc.connectionState
+    );
 
     if (
       pc.connectionState === "disconnected" ||
       pc.connectionState === "failed" ||
       pc.connectionState === "closed"
     ) {
+
       location.reload();
     }
   };
@@ -308,6 +328,8 @@ socket.on("signal", async (data) => {
 
   if (data.type === "offer") {
 
+    console.log("OFFER RECEIVED");
+
     await pc.setRemoteDescription(
       new RTCSessionDescription(data)
     );
@@ -324,11 +346,15 @@ socket.on("signal", async (data) => {
 
   } else if (data.type === "answer") {
 
+    console.log("ANSWER RECEIVED");
+
     await pc.setRemoteDescription(
       new RTCSessionDescription(data)
     );
 
   } else {
+
+    console.log("ICE RECEIVED");
 
     try {
 
@@ -336,7 +362,11 @@ socket.on("signal", async (data) => {
         new RTCIceCandidate(data)
       );
 
-    } catch {}
+    } catch (err) {
+
+      console.error(err);
+
+    }
   }
 });
 
