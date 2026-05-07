@@ -22,4 +22,4 @@ TO USE :
 NOTES :
 
 * currently unknown how many rooms can exist at once, likely low due to render limitations [currently running on the  free plan].
-* three user rooms are currently experimental.
+* 3 user rooms are currently experimental.
