@@ -3,7 +3,7 @@ PORTAL, 2026.
 https://maxis.fit/portal.html
 
 
-LIVE URL : https://portal.maxis.fit
+LIVE URL : https://portal.gripe
 
 
 TO USE :
