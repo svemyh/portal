@@ -181,14 +181,14 @@ button {
 
   <div id="title">
     portal<br>
-    <span>v0.0.4</span>
+    <span>v0.0.5</span>
   </div>
 
   <div id="entry">
 
     <input
       id="code"
-      placeholder="code" />
+      placeholder="enter code" />
 
     <button onclick="join()">
       enter
@@ -225,6 +225,9 @@ button {
 
 <script src="/socket.io/socket.io.js"></script>
 
+<!-- FACE API -->
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+
 <script>
 
 const socket = io();
@@ -243,6 +246,10 @@ let controlMode = "local";
 let scale = 1;
 let posX = 0;
 let posY = 0;
+
+/* ---------- FACE TRACKING ---------- */
+
+let faceTrackingStarted = false;
 
 /* ---------- JOIN ---------- */
 
@@ -282,6 +289,94 @@ async function join() {
     "waiting...";
 
   socket.emit("join", code);
+
+  /* LOAD FACE API */
+
+  await faceapi.nets.tinyFaceDetector.loadFromUri(
+    "/models"
+  );
+
+  startHeadTracking();
+}
+
+/* ---------- HEAD TRACKING ---------- */
+
+function startHeadTracking() {
+
+  if (faceTrackingStarted) return;
+
+  faceTrackingStarted = true;
+
+  const localVideo =
+    document.getElementById("local");
+
+  setInterval(async () => {
+
+    if (!localVideo.videoWidth) return;
+
+    try {
+
+      const detection =
+        await faceapi.detectSingleFace(
+          localVideo,
+          new faceapi.TinyFaceDetectorOptions({
+            inputSize: 224,
+            scoreThreshold: 0.5
+          })
+        );
+
+      if (!detection) return;
+
+      const box =
+        detection.box;
+
+      const centerX =
+        box.x + box.width / 2;
+
+      const centerY =
+        box.y + box.height / 2;
+
+      const normalizedX =
+        (centerX / localVideo.videoWidth) - 0.5;
+
+      const normalizedY =
+        (centerY / localVideo.videoHeight) - 0.5;
+
+      /* HEAD MOVEMENT */
+
+      posX =
+        normalizedX * 500;
+
+      posY =
+        normalizedY * 500;
+
+      /* DEPTH ZOOM */
+
+      const faceArea =
+        box.width * box.height;
+
+      const targetScale =
+        Math.min(
+          Math.max(
+            faceArea / 50000,
+            1
+          ),
+          2.5
+        );
+
+      scale =
+        scale * 0.85 +
+        targetScale * 0.15;
+
+      updateTransform();
+
+    } catch (err) {
+
+      console.error(err);
+
+    }
+
+  }, 120);
 }
 
 /* ---------- USER ASSIGNMENT ---------- */
@@ -475,8 +570,7 @@ socket.on("peer", async ({ initiator }) => {
           myUserNumber;
 
         document.body.classList.add(
-          "connected"
-        );
+          "connected");
 
       } catch (err) {
 
