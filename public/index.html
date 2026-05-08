@@ -338,10 +338,10 @@ async function join() {
 
   console.log("FACE API LOADED");
 
-  /* LOAD MODEL */
+  /* LOAD MODEL FROM CDN */
 
   await faceapi.nets.tinyFaceDetector.loadFromUri(
-    "/models"
+    "https://cdn.jsdelivr.net/npm/face-api.js/weights"
   );
 
   console.log(
@@ -384,10 +384,6 @@ function startHeadTracking() {
 
     if (!localVideo.videoWidth) {
 
-      console.log(
-        "NO VIDEO WIDTH"
-      );
-
       return;
     }
 
@@ -395,10 +391,6 @@ function startHeadTracking() {
     canvas.height = 575;
 
     try {
-
-      console.log(
-        "DETECTION LOOP RUNNING"
-      );
 
       const detection =
         await faceapi.detectSingleFace(
@@ -418,16 +410,8 @@ function startHeadTracking() {
 
       if (!detection) {
 
-        console.log(
-          "NO FACE DETECTED"
-        );
-
         return;
       }
-
-      console.log(
-        "FACE DETECTED"
-      );
 
       const box =
         detection.box;
@@ -656,11 +640,6 @@ function toggleAI() {
   aiMode = !aiMode;
 
   flashAI();
-
-  console.log(
-    "AI MODE:",
-    aiMode
-  );
 }
 
 /* ---------- PEER CONNECT ---------- */
@@ -873,7 +852,7 @@ document
   }
 });
 
-/* ---------- AI TEST KEY ---------- */
+/* ---------- AI TOGGLE ---------- */
 
 window.addEventListener(
   "keydown",
