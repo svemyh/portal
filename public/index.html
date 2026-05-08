@@ -116,7 +116,7 @@ button {
   transition: opacity 0.2s ease;
 }
 
-/* KEEP LOCAL VIDEO ACTIVE FOR FACE API */
+/* KEEP LOCAL VIDEO ACTIVE */
 
 .connected #local {
 
@@ -258,7 +258,8 @@ button {
 
 <script src="/socket.io/socket.io.js"></script>
 
-<script  src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+<!-- FACE API -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
 
 <script>
 
@@ -326,13 +327,26 @@ async function join() {
 
   socket.emit("join", code);
 
-  /* LOAD FACE API MODEL */
+  /* VERIFY FACE API */
+
+  if (!window.faceapi) {
+
+    alert("face api failed to load");
+
+    return;
+  }
+
+  console.log("FACE API LOADED");
+
+  /* LOAD MODEL */
 
   await faceapi.nets.tinyFaceDetector.loadFromUri(
     "/models"
   );
 
-  console.log("FACE API LOADED");
+  console.log(
+    "MODEL LOAD SUCCESS"
+  );
 
   startHeadTracking();
 }
@@ -368,12 +382,23 @@ function startHeadTracking() {
       return;
     }
 
-    if (!localVideo.videoWidth) return;
+    if (!localVideo.videoWidth) {
+
+      console.log(
+        "NO VIDEO WIDTH"
+      );
+
+      return;
+    }
 
     canvas.width = 575;
     canvas.height = 575;
 
     try {
+
+      console.log(
+        "DETECTION LOOP RUNNING"
+      );
 
       const detection =
         await faceapi.detectSingleFace(
@@ -391,7 +416,18 @@ function startHeadTracking() {
         canvas.height
       );
 
-      if (!detection) return;
+      if (!detection) {
+
+        console.log(
+          "NO FACE DETECTED"
+        );
+
+        return;
+      }
+
+      console.log(
+        "FACE DETECTED"
+      );
 
       const box =
         detection.box;
@@ -416,7 +452,7 @@ function startHeadTracking() {
       const h =
         box.height * scaleY;
 
-      /* FACE BOX */
+      /* DRAW BOX */
 
       ctx.strokeStyle = "white";
 
@@ -429,7 +465,7 @@ function startHeadTracking() {
         h
       );
 
-      /* CENTER POINT */
+      /* CENTER */
 
       ctx.fillStyle = "white";
 
@@ -440,7 +476,7 @@ function startHeadTracking() {
         6
       );
 
-      /* HEAD CONTROL */
+      /* HEAD MOVEMENT */
 
       const centerX =
         box.x + box.width / 2;
@@ -459,6 +495,8 @@ function startHeadTracking() {
 
       posY =
         normalizedY * 500;
+
+      /* DEPTH ZOOM */
 
       const faceArea =
         box.width * box.height;
@@ -687,8 +725,6 @@ socket.on("peer", async ({ initiator }) => {
     }
   });
 
-  /* ---------- REMOTE STREAM ---------- */
-
   pc.ontrack = (event) => {
 
     const remoteVideo =
@@ -723,8 +759,6 @@ socket.on("peer", async ({ initiator }) => {
     };
   };
 
-  /* ---------- ICE ---------- */
-
   pc.onicecandidate = (event) => {
 
     if (event.candidate) {
@@ -737,8 +771,6 @@ socket.on("peer", async ({ initiator }) => {
       });
     }
   };
-
-  /* ---------- CONNECTION ---------- */
 
   pc.onconnectionstatechange = () => {
 
@@ -756,8 +788,6 @@ socket.on("peer", async ({ initiator }) => {
       location.reload();
     }
   };
-
-  /* ---------- OFFER ---------- */
 
   if (initiator) {
 
