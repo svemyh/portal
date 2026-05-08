@@ -34,6 +34,7 @@ io.on("connection", (socket) => {
       return;
     }
 
+
     const userNumber =
       room.users.length === 0 ? 1 : 2;
 
