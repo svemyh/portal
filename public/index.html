@@ -94,7 +94,8 @@ button {
   margin: 10px 0;
 }
 
-#modeFlash {
+#modeFlash,
+#aiFlash {
 
   position: fixed;
 
@@ -110,12 +111,10 @@ button {
 
   pointer-events: none;
 
-  z-index: 2000;
+  z-index: 3000;
 
   transition: opacity 0.2s ease;
 }
-
-/* CONNECTED STATE */
 
 .connected #local,
 .connected #label-local,
@@ -156,11 +155,27 @@ button {
   border: 1px solid rgba(255,255,255,0.08);
 }
 
-/* MOBILE */
+#faceOverlay {
+
+  position: fixed;
+
+  top: 50%;
+  left: 50%;
+
+  width: 575px;
+  height: 575px;
+
+  transform: translate(-50%, -50%);
+
+  pointer-events: none;
+
+  z-index: 2001;
+}
 
 @media (max-width: 700px) {
 
-  .connected #remote {
+  .connected #remote,
+  #faceOverlay {
 
     width: 575px;
     height: 575px;
@@ -176,6 +191,7 @@ button {
 <body>
 
 <div id="modeFlash"></div>
+<div id="aiFlash"></div>
 
 <div id="container">
 
@@ -223,9 +239,10 @@ button {
 
 </div>
 
+<canvas id="faceOverlay"></canvas>
+
 <script src="/socket.io/socket.io.js"></script>
 
-<!-- FACE API -->
 <script defer src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
 
 <script>
@@ -240,6 +257,16 @@ let myUserNumber = null;
 /* ---------- CONTROL MODE ---------- */
 
 let controlMode = "local";
+
+/* ---------- AI MODE ---------- */
+
+let aiMode = false;
+
+let tapCount = 0;
+let tapTimer = null;
+
+let mobileTapCount = 0;
+let lastTap = 0;
 
 /* ---------- TRANSFORM STATE ---------- */
 
@@ -310,9 +337,30 @@ function startHeadTracking() {
   const localVideo =
     document.getElementById("local");
 
+  const canvas =
+    document.getElementById("faceOverlay");
+
+  const ctx =
+    canvas.getContext("2d");
+
   setInterval(async () => {
 
+    if (!aiMode) {
+
+      ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      return;
+    }
+
     if (!localVideo.videoWidth) return;
+
+    canvas.width = 575;
+    canvas.height = 575;
 
     try {
 
@@ -325,10 +373,63 @@ function startHeadTracking() {
           })
         );
 
+      ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
       if (!detection) return;
 
       const box =
         detection.box;
+
+      const scaleX =
+        canvas.width /
+        localVideo.videoWidth;
+
+      const scaleY =
+        canvas.height /
+        localVideo.videoHeight;
+
+      const x =
+        box.x * scaleX;
+
+      const y =
+        box.y * scaleY;
+
+      const w =
+        box.width * scaleX;
+
+      const h =
+        box.height * scaleY;
+
+      /* FACE BOX */
+
+      ctx.strokeStyle = "white";
+
+      ctx.lineWidth = 2;
+
+      ctx.strokeRect(
+        x,
+        y,
+        w,
+        h
+      );
+
+      /* CENTER POINT */
+
+      ctx.fillStyle = "white";
+
+      ctx.fillRect(
+        x + w / 2 - 3,
+        y + h / 2 - 3,
+        6,
+        6
+      );
+
+      /* HEAD MOVEMENT */
 
       const centerX =
         box.x + box.width / 2;
@@ -341,8 +442,6 @@ function startHeadTracking() {
 
       const normalizedY =
         (centerY / localVideo.videoHeight) - 0.5;
-
-      /* HEAD MOVEMENT */
 
       posX =
         normalizedX * 500;
@@ -468,6 +567,29 @@ function flashMode() {
   }, 800);
 }
 
+/* ---------- AI FLASH ---------- */
+
+function flashAI() {
+
+  const flash =
+    document.getElementById("aiFlash");
+
+  flash.innerText =
+    aiMode
+      ? "AI ON"
+      : "AI OFF";
+
+  flash.style.opacity = "1";
+
+  clearTimeout(flash.timeout);
+
+  flash.timeout = setTimeout(() => {
+
+    flash.style.opacity = "0";
+
+  }, 800);
+}
+
 /* ---------- TOGGLE MODE ---------- */
 
 function toggleMode() {
@@ -478,6 +600,15 @@ function toggleMode() {
       : "local";
 
   flashMode();
+}
+
+/* ---------- TOGGLE AI ---------- */
+
+function toggleAI() {
+
+  aiMode = !aiMode;
+
+  flashAI();
 }
 
 /* ---------- PEER CONNECT ---------- */
@@ -570,7 +701,8 @@ socket.on("peer", async ({ initiator }) => {
           myUserNumber;
 
         document.body.classList.add(
-          "connected");
+          "connected"
+        );
 
       } catch (err) {
 
@@ -749,13 +881,38 @@ window.addEventListener(
   }
 );
 
-/* ---------- DESKTOP DOUBLE CLICK ---------- */
+/* ---------- DOUBLE CLICK ---------- */
 
 remoteVideo.addEventListener(
   "dblclick",
   () => {
 
     toggleMode();
+  }
+);
+
+/* ---------- TRIPLE CLICK ---------- */
+
+remoteVideo.addEventListener(
+  "click",
+  () => {
+
+    tapCount++;
+
+    clearTimeout(tapTimer);
+
+    tapTimer = setTimeout(() => {
+
+      tapCount = 0;
+
+    }, 400);
+
+    if (tapCount === 3) {
+
+      tapCount = 0;
+
+      toggleAI();
+    }
   }
 );
 
@@ -881,9 +1038,7 @@ remoteVideo.addEventListener(
   { passive: false }
 );
 
-/* ---------- MOBILE DOUBLE TAP ---------- */
-
-let lastTap = 0;
+/* ---------- MOBILE TAPS ---------- */
 
 remoteVideo.addEventListener(
   "touchend",
@@ -893,7 +1048,23 @@ remoteVideo.addEventListener(
 
     if (now - lastTap < 300) {
 
+      mobileTapCount++;
+
+    } else {
+
+      mobileTapCount = 1;
+    }
+
+    if (mobileTapCount === 2) {
+
       toggleMode();
+    }
+
+    if (mobileTapCount === 3) {
+
+      toggleAI();
+
+      mobileTapCount = 0;
     }
 
     lastTap = now;
