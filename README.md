@@ -1,4 +1,4 @@
-Max Tindall,
+Max Tindall.
 PORTAL, 2026.
 https://maxis.fit/portal.html
 
@@ -21,5 +21,7 @@ TO USE :
 
 NOTES :
 
-* currently unknown how many rooms can exist at once, likely low due to render limitations [currently running on the  free plan].
-* 3 user rooms are currently experimental.
+* currently unknown how many rooms can exist at once; likely few due to render limitations [currently running on the  free plan].
+* owing to the TURN server; data usage is becoming an issue.
+* face-api is cuurently experimental and not fully implemented.
+* 
