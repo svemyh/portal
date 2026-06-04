@@ -164,6 +164,7 @@ button {
   z-index: 3000;
 
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
 
@@ -186,6 +187,36 @@ button {
 #fileBox.dragging {
 
   border-color: white;
+}
+
+#fileProgress {
+
+  width: 80%;
+  height: 1px;
+
+  background: rgba(255,255,255,0.15);
+
+  margin-top: 14px;
+
+  display: none;
+}
+
+#fileProgressBar {
+
+  height: 100%;
+  width: 0%;
+
+  background: white;
+
+  transition: width 0.1s linear;
+}
+
+#fileLabel {
+
+  margin-top: 10px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  opacity: 0.5;
 }
 
 /* ---------- OVERLAYS ---------- */
@@ -250,8 +281,17 @@ button {
   playsinline>
 </video>
 
+<input
+  type="file"
+  id="filePicker"
+  style="display:none">
+
 <div id="fileBox">
-  DROP FILE
+  <span id="fileText">DROP FILE</span>
+  <div id="fileProgress">
+    <div id="fileProgressBar"></div>
+  </div>
+  <div id="fileLabel"></div>
 </div>
 
 <div
@@ -284,10 +324,6 @@ let fileX = 0;
 let fileY = 0;
 let fileScale = 1;
 
-/* ---------- CONTROL ---------- */
-
-let controlTarget = "video";
-
 /* ---------- ELEMENTS ---------- */
 
 const remoteVideo =
@@ -314,6 +350,91 @@ function flash(text) {
     overlay.style.opacity = "0";
 
   }, 900);
+}
+
+/* ---------- MAKE DRAGGABLE ---------- */
+
+function makeDraggable(el, state) {
+
+  let dragging = false;
+  let moved = false;
+  let startX = 0;
+  let startY = 0;
+
+  el.addEventListener("mousedown", (e) => {
+
+    dragging = true;
+    moved = false;
+    startX = e.clientX - state.x;
+    startY = e.clientY - state.y;
+
+    e.stopPropagation();
+  });
+
+  window.addEventListener("mousemove", (e) => {
+
+    if (!dragging) return;
+
+    const nx = e.clientX - startX;
+    const ny = e.clientY - startY;
+
+    if (
+      Math.abs(nx - state.x) > 3 ||
+      Math.abs(ny - state.y) > 3
+    ) {
+      moved = true;
+    }
+
+    state.x = nx;
+    state.y = ny;
+
+    state.update();
+  });
+
+  window.addEventListener("mouseup", () => {
+
+    dragging = false;
+  });
+
+  el.addEventListener("touchstart", (e) => {
+
+    const t = e.touches[0];
+    dragging = true;
+    moved = false;
+    startX = t.clientX - state.x;
+    startY = t.clientY - state.y;
+
+    e.stopPropagation();
+  }, { passive: true });
+
+  window.addEventListener("touchmove", (e) => {
+
+    if (!dragging) return;
+
+    const t = e.touches[0];
+    const nx = t.clientX - startX;
+    const ny = t.clientY - startY;
+
+    if (
+      Math.abs(nx - state.x) > 3 ||
+      Math.abs(ny - state.y) > 3
+    ) {
+      moved = true;
+    }
+
+    state.x = nx;
+    state.y = ny;
+
+    state.update();
+  }, { passive: true });
+
+  window.addEventListener("touchend", () => {
+
+    dragging = false;
+  });
+
+  /* expose moved flag so click handlers can check it */
+  state.wasMoved = () => moved;
 }
 
 /* ---------- JOIN ---------- */
@@ -485,6 +606,43 @@ socket.on("signal", async (data) => {
   }
 });
 
+/* ---------- ROOM FULL ---------- */
+
+socket.on("full", () => {
+
+  document
+  .getElementById("status")
+  .innerText = "room full";
+
+  document
+  .getElementById("entry")
+  .style.display = "";
+
+  if (localStream) {
+    localStream.getTracks()
+      .forEach(t => t.stop());
+    localStream = null;
+  }
+});
+
+/* ---------- PEER LEFT ---------- */
+
+socket.on("peer_left", () => {
+
+  document
+  .getElementById("status")
+  .innerText = "peer disconnected";
+
+  if (pc) {
+    pc.close();
+    pc = null;
+  }
+
+  remoteVideo.srcObject = null;
+  dataChannel = null;
+  receiveChannel = null;
+});
+
 /* ---------- TRANSFORMS ---------- */
 
 function updateVideoTransform() {
@@ -504,99 +662,25 @@ function updateFileTransform() {
   `;
 }
 
-/* ---------- CONTROL TOGGLE ---------- */
+/* ---------- INIT DRAG ---------- */
 
-function toggleControl() {
+makeDraggable(remoteVideo, {
+  get x() { return videoX; },
+  set x(v) { videoX = v; },
+  get y() { return videoY; },
+  set y(v) { videoY = v; },
+  update: updateVideoTransform
+});
 
-  controlTarget =
-    controlTarget === "video"
-      ? "file"
-      : "video";
+const fileBoxState = {
+  get x() { return fileX; },
+  set x(v) { fileX = v; },
+  get y() { return fileY; },
+  set y(v) { fileY = v; },
+  update: updateFileTransform
+};
 
-  flash(
-    controlTarget.toUpperCase()
-  );
-}
-
-/* ---------- DOUBLE CLICK ---------- */
-
-window.addEventListener(
-  "dblclick",
-  toggleControl
-);
-
-/* ---------- DRAG ---------- */
-
-let dragging = false;
-
-let startX = 0;
-let startY = 0;
-
-window.addEventListener(
-  "mousedown",
-  (e) => {
-
-    dragging = true;
-
-    if (
-      controlTarget === "video"
-    ) {
-
-      startX =
-        e.clientX - videoX;
-
-      startY =
-        e.clientY - videoY;
-
-    } else {
-
-      startX =
-        e.clientX - fileX;
-
-      startY =
-        e.clientY - fileY;
-    }
-  }
-);
-
-window.addEventListener(
-  "mousemove",
-  (e) => {
-
-    if (!dragging) return;
-
-    if (
-      controlTarget === "video"
-    ) {
-
-      videoX =
-        e.clientX - startX;
-
-      videoY =
-        e.clientY - startY;
-
-      updateVideoTransform();
-
-    } else {
-
-      fileX =
-        e.clientX - startX;
-
-      fileY =
-        e.clientY - startY;
-
-      updateFileTransform();
-    }
-  }
-);
-
-window.addEventListener(
-  "mouseup",
-  () => {
-
-    dragging = false;
-  }
-);
+makeDraggable(fileBox, fileBoxState);
 
 /* ---------- WHEEL ---------- */
 
@@ -606,22 +690,11 @@ window.addEventListener(
 
     e.preventDefault();
 
-    if (
-      controlTarget === "video"
-    ) {
+    const overFile =
+      e.target === fileBox ||
+      fileBox.contains(e.target);
 
-      videoScale +=
-        e.deltaY * -0.001;
-
-      videoScale =
-        Math.min(
-          Math.max(1, videoScale),
-          4
-        );
-
-      updateVideoTransform();
-
-    } else {
+    if (overFile) {
 
       fileScale +=
         e.deltaY * -0.001;
@@ -633,178 +706,231 @@ window.addEventListener(
         );
 
       updateFileTransform();
-    }
 
+    } else {
+
+      videoScale +=
+        e.deltaY * -0.001;
+
+      videoScale =
+        Math.min(
+          Math.max(1, videoScale),
+          4
+        );
+
+      updateVideoTransform();
+    }
   },
   { passive: false }
 );
 
-/* ---------- FILE DROP ---------- */
+/* ---------- FILE UI REFS ---------- */
 
-fileBox.addEventListener(
-  "dragover",
-  (e) => {
+const fileText =
+  document.getElementById("fileText");
 
-    e.preventDefault();
+const fileProgress =
+  document.getElementById("fileProgress");
 
-    fileBox.classList.add(
-      "dragging"
-    );
-  }
-);
+const fileProgressBar =
+  document.getElementById("fileProgressBar");
 
-fileBox.addEventListener(
-  "dragleave",
-  () => {
+const fileLabel =
+  document.getElementById("fileLabel");
 
-    fileBox.classList.remove(
-      "dragging"
-    );
-  }
-);
+const filePicker =
+  document.getElementById("filePicker");
 
-fileBox.addEventListener(
-  "drop",
-  async (e) => {
+/* ---------- FILE PROGRESS ---------- */
 
-    e.preventDefault();
+function showProgress(pct, label) {
 
-    fileBox.classList.remove(
-      "dragging"
-    );
+  fileProgress.style.display = "block";
+  fileProgressBar.style.width = pct + "%";
+  fileLabel.innerText = label;
+}
 
-    const file =
-      e.dataTransfer.files[0];
+function hideProgress() {
 
-    if (!file) return;
-
-    flash("SENDING...");
-
-    const buffer =
-      await file.arrayBuffer();
-
-    sendFile(
-      buffer,
-      file.name
-    );
-  }
-);
+  fileProgress.style.display = "none";
+  fileProgressBar.style.width = "0%";
+  fileLabel.innerText = "";
+}
 
 /* ---------- SEND FILE ---------- */
 
-function sendFile(
-  buffer,
-  filename
-) {
+const CHUNK_SIZE = 16384;
+const BUFFER_THRESHOLD = 262144;
 
-  const chunkSize = 64000;
-
-  const total =
-    Math.ceil(
-      buffer.byteLength /
-      chunkSize
-    );
+async function sendFile(buffer, filename) {
 
   const channel =
-    dataChannel ||
-    receiveChannel;
+    dataChannel || receiveChannel;
 
-  channel.send(JSON.stringify({
-
-    type: "meta",
-
-    filename
-  }));
-
-  for (
-    let i = 0;
-    i < total;
-    i++
-  ) {
-
-    const chunk =
-      buffer.slice(
-
-        i * chunkSize,
-
-        (i + 1) * chunkSize
-      );
-
-    channel.send(chunk);
+  if (!channel || channel.readyState !== "open") {
+    flash("NOT CONNECTED");
+    return;
   }
 
-  channel.send(JSON.stringify({
+  const total = buffer.byteLength;
+  let offset = 0;
 
-    type: "end"
+  fileText.innerText = "SENDING";
+  showProgress(0, filename);
+
+  channel.send(JSON.stringify({
+    type: "meta",
+    filename,
+    size: total
   }));
 
-  flash("SENT");
+  function sendNext() {
+
+    while (offset < total) {
+
+      if (channel.bufferedAmount > BUFFER_THRESHOLD) {
+
+        channel.bufferedAmountLowThreshold =
+          BUFFER_THRESHOLD / 2;
+
+        channel.onbufferedamountlow = () => {
+          channel.onbufferedamountlow = null;
+          sendNext();
+        };
+
+        return;
+      }
+
+      const end = Math.min(offset + CHUNK_SIZE, total);
+      channel.send(buffer.slice(offset, end));
+      offset = end;
+
+      showProgress(
+        Math.round((offset / total) * 100),
+        filename
+      );
+    }
+
+    channel.send(JSON.stringify({ type: "end" }));
+
+    fileText.innerText = "DROP FILE";
+    hideProgress();
+    flash("SENT");
+  }
+
+  sendNext();
 }
 
 /* ---------- RECEIVE ---------- */
 
 let incomingChunks = [];
-let incomingName = "download.zip";
+let incomingName = "download";
+let incomingSize = 0;
+let incomingReceived = 0;
 
 function setupDataChannel(channel) {
 
-  channel.binaryType =
-    "arraybuffer";
+  channel.binaryType = "arraybuffer";
 
   channel.onmessage = (event) => {
 
-    if (
-      typeof event.data === "string"
-    ) {
+    if (typeof event.data === "string") {
 
-      const msg =
-        JSON.parse(event.data);
+      const msg = JSON.parse(event.data);
 
-      if (
-        msg.type === "meta"
-      ) {
+      if (msg.type === "meta") {
 
-        incomingName =
-          msg.filename + ".zip";
-
+        incomingName = msg.filename;
+        incomingSize = msg.size || 0;
+        incomingReceived = 0;
         incomingChunks = [];
 
-        flash("RECEIVING...");
+        fileText.innerText = "RECEIVING";
+        showProgress(0, msg.filename);
       }
 
-      if (
-        msg.type === "end"
-      ) {
+      if (msg.type === "end") {
 
-        const blob =
-          new Blob(incomingChunks);
-
-        const url =
-          URL.createObjectURL(blob);
-
-        const a =
-          document.createElement("a");
+        const blob = new Blob(incomingChunks);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
 
         a.href = url;
+        a.download = incomingName;
 
-        a.download =
-          incomingName;
-
+        /* iOS Safari requires element in DOM */
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
 
-        flash(
-          "DOWNLOAD COMPLETE"
-        );
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+        fileText.innerText = "DROP FILE";
+        hideProgress();
+        flash("RECEIVED");
       }
 
     } else {
 
-      incomingChunks.push(
-        event.data
-      );
+      incomingChunks.push(event.data);
+      incomingReceived += event.data.byteLength;
+
+      if (incomingSize > 0) {
+
+        showProgress(
+          Math.round((incomingReceived / incomingSize) * 100),
+          incomingName
+        );
+      }
     }
   };
 }
+
+/* ---------- FILE DROP ---------- */
+
+fileBox.addEventListener("dragover", (e) => {
+
+  e.preventDefault();
+  fileBox.classList.add("dragging");
+});
+
+fileBox.addEventListener("dragleave", () => {
+
+  fileBox.classList.remove("dragging");
+});
+
+fileBox.addEventListener("drop", async (e) => {
+
+  e.preventDefault();
+  fileBox.classList.remove("dragging");
+
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+
+  const buffer = await file.arrayBuffer();
+  sendFile(buffer, file.name);
+});
+
+/* ---------- MOBILE TAP TO PICK ---------- */
+
+fileBox.addEventListener("click", () => {
+
+  /* don't open picker if the user was dragging the box */
+  if (fileBoxState.wasMoved && fileBoxState.wasMoved()) return;
+
+  filePicker.click();
+});
+
+filePicker.addEventListener("change", async () => {
+
+  const file = filePicker.files[0];
+  if (!file) return;
+
+  filePicker.value = "";
+
+  const buffer = await file.arrayBuffer();
+  sendFile(buffer, file.name);
+});
 
 /* ---------- ENTER ---------- */
 
