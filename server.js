@@ -1,116 +1,38 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
+/**
+ * Run once: node download-models.js
+ * Downloads face-api.js model weights into public/models/
+ * Required models: tiny_face_detector + age_gender_net
+ */
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+const https = require("https");
+const fs    = require("fs");
+const path  = require("path");
 
-app.use(express.static("public"));
+const BASE  = "https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/";
+const DEST  = path.join(__dirname, "public", "models");
 
-/* ---------- ICE CONFIG ---------- */
-/*
-  TURN credentials are served from environment variables so they
-  never appear in client-side source code.
+const FILES = [
+  "tiny_face_detector_model-weights_manifest.json",
+  "tiny_face_detector_model-shard1",
+  "age_gender_model-weights_manifest.json",
+  "age_gender_model-shard1",
+];
 
-  Set these in your .env / hosting dashboard:
-    TURN_URL_UDP=turn:YOUR_IP:3478?transport=udp
-    TURN_URL_TCP=turn:YOUR_IP:3478?transport=tcp
-    TURN_USERNAME=portal
-    TURN_CREDENTIAL=your_password
-*/
+if (!fs.existsSync(DEST)) fs.mkdirSync(DEST, { recursive: true });
 
-app.get("/ice-config", (req, res) => {
-
-  const iceServers = [
-    { urls: "stun:stun.l.google.com:19302" }
-  ];
-
-  if (process.env.TURN_URL_UDP || process.env.TURN_URL_TCP) {
-
-    const urls = [];
-    if (process.env.TURN_URL_UDP) urls.push(process.env.TURN_URL_UDP);
-    if (process.env.TURN_URL_TCP) urls.push(process.env.TURN_URL_TCP);
-
-    iceServers.push({
-      urls,
-      username: process.env.TURN_USERNAME || "",
-      credential: process.env.TURN_CREDENTIAL || ""
-    });
-  }
-
-  res.json({ iceServers });
-});
-
-/* ---------- ROOMS ---------- */
-
-const rooms = {};
-
-io.on("connection", (socket) => {
-
-  socket.on("join", (code) => {
-
-    code = code.trim();
-
-    if (!rooms[code]) {
-      rooms[code] = { users: [] };
-    }
-
-    const room = rooms[code];
-
-    if (room.users.length >= 2) {
-      socket.emit("full");
-      return;
-    }
-
-    const userNumber = room.users.length === 0 ? 1 : 2;
-    room.users.push(socket.id);
-    socket.join(code);
-    socket.code = code;
-
-    socket.emit("assigned", { userNumber });
-
-    if (room.users.length === 2) {
-      const [first, second] = room.users;
-      io.to(first).emit("peer", { initiator: true });
-      io.to(second).emit("peer", { initiator: false });
-    }
+function download(filename) {
+  return new Promise((resolve, reject) => {
+    const dest = path.join(DEST, filename);
+    if (fs.existsSync(dest)) { console.log("skip (exists):", filename); return resolve(); }
+    const file = fs.createWriteStream(dest);
+    https.get(BASE + filename, (res) => {
+      res.pipe(file);
+      file.on("finish", () => { file.close(); console.log("downloaded:", filename); resolve(); });
+    }).on("error", (err) => { fs.unlink(dest, () => {}); reject(err); });
   });
+}
 
-  /* ---------- SIGNAL ---------- */
-
-  socket.on("signal", ({ code, data }) => {
-    socket.to(code).emit("signal", data);
-  });
-
-  /* ---------- REMOTE TRANSFORM ---------- */
-
-  socket.on("transform", ({ code, posX, posY, scale }) => {
-    socket.to(code).emit("transform", { posX, posY, scale });
-  });
-
-  /* ---------- DISCONNECT ---------- */
-
-  socket.on("disconnect", () => {
-
-    const code = socket.code;
-    if (!code || !rooms[code]) return;
-
-    const room = rooms[code];
-    room.users = room.users.filter(id => id !== socket.id);
-
-    socket.to(code).emit("peer_left");
-
-    if (room.users.length === 0) {
-      delete rooms[code];
-    }
-  });
-});
-
-/* ---------- START ---------- */
-
-const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, () => {
-  console.log("running on port " + PORT);
-});
+(async () => {
+  for (const f of FILES) await download(f);
+  console.log("done — models in public/models/");
+})();
