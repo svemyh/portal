@@ -133,6 +133,12 @@ button {
   cursor: grab;
 }
 
+/* remote control active indicator */
+#remote.remote-control {
+  border-color: rgba(255,255,255,0.5);
+  cursor: crosshair;
+}
+
 #local {
 
   position: fixed;
@@ -324,6 +330,10 @@ let fileX = 0;
 let fileY = 0;
 let fileScale = 1;
 
+/* ---------- REMOTE CONTROL ---------- */
+
+let remoteControlActive = false;
+
 /* ---------- ELEMENTS ---------- */
 
 const remoteVideo =
@@ -340,15 +350,12 @@ const overlay =
 function flash(text) {
 
   overlay.innerText = text;
-
   overlay.style.opacity = "1";
 
   clearTimeout(overlay.timeout);
 
   overlay.timeout = setTimeout(() => {
-
     overlay.style.opacity = "0";
-
   }, 900);
 }
 
@@ -362,12 +369,10 @@ function makeDraggable(el, state) {
   let startY = 0;
 
   el.addEventListener("mousedown", (e) => {
-
     dragging = true;
     moved = false;
     startX = e.clientX - state.x;
     startY = e.clientY - state.y;
-
     e.stopPropagation();
   });
 
@@ -387,22 +392,27 @@ function makeDraggable(el, state) {
 
     state.x = nx;
     state.y = ny;
-
     state.update();
+
+    /* broadcast position if remote control is active */
+    if (el === remoteVideo && remoteControlActive) {
+      emitTransform();
+    }
   });
 
   window.addEventListener("mouseup", () => {
-
     dragging = false;
   });
 
   el.addEventListener("touchstart", (e) => {
 
-    const t = e.touches[0];
-    dragging = true;
-    moved = false;
-    startX = t.clientX - state.x;
-    startY = t.clientY - state.y;
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      dragging = true;
+      moved = false;
+      startX = t.clientX - state.x;
+      startY = t.clientY - state.y;
+    }
 
     e.stopPropagation();
   }, { passive: true });
@@ -410,6 +420,7 @@ function makeDraggable(el, state) {
   window.addEventListener("touchmove", (e) => {
 
     if (!dragging) return;
+    if (e.touches.length !== 1) return;
 
     const t = e.touches[0];
     const nx = t.clientX - startX;
@@ -424,16 +435,17 @@ function makeDraggable(el, state) {
 
     state.x = nx;
     state.y = ny;
-
     state.update();
+
+    if (el === remoteVideo && remoteControlActive) {
+      emitTransform();
+    }
   }, { passive: true });
 
   window.addEventListener("touchend", () => {
-
     dragging = false;
   });
 
-  /* expose moved flag so click handlers can check it */
   state.wasMoved = () => moved;
 }
 
@@ -452,115 +464,86 @@ async function join() {
 
   localStream =
     await navigator.mediaDevices.getUserMedia({
-
       video: true,
       audio: true
     });
 
   document
-  .getElementById("local")
-  .srcObject = localStream;
+    .getElementById("local")
+    .srcObject = localStream;
 
   socket.emit("join", code);
 
   document
-  .getElementById("entry")
-  .style.display = "none";
+    .getElementById("entry")
+    .style.display = "none";
 
   document
-  .getElementById("status")
-  .innerText = "waiting...";
+    .getElementById("status")
+    .innerText = "waiting...";
 }
 
 /* ---------- PEER ---------- */
 
 socket.on("peer", async ({ initiator }) => {
 
-  pc = new RTCPeerConnection({
+  /* fetch short-lived TURN credentials from server */
+  let iceServers = [
+    { urls: "stun:stun.l.google.com:19302" }
+  ];
 
-    iceServers: [
+  try {
+    const res = await fetch("/ice-config");
+    if (res.ok) {
+      const cfg = await res.json();
+      iceServers = cfg.iceServers;
+    }
+  } catch (e) {
+    console.warn("Could not fetch ICE config, using STUN only:", e);
+  }
 
-      {
-        urls:
-          "stun:stun.l.google.com:19302"
-      },
-
-      {
-        urls: [
-          "turn:YOUR_VULTR_IP:3478?transport=udp",
-          "turn:YOUR_VULTR_IP:3478?transport=tcp"
-        ],
-
-        username: "portal",
-        credential: "portal_password"
-      }
-    ]
-  });
+  pc = new RTCPeerConnection({ iceServers });
 
   /* ---------- FILE CHANNEL ---------- */
 
   if (initiator) {
 
     dataChannel =
-      pc.createDataChannel("files", {
-
-        ordered: true
-      });
+      pc.createDataChannel("files", { ordered: true });
 
     setupDataChannel(dataChannel);
   }
 
   pc.ondatachannel = (event) => {
-
     receiveChannel = event.channel;
-
     setupDataChannel(receiveChannel);
   };
 
   localStream.getTracks().forEach(track => {
-
-    pc.addTrack(
-      track,
-      localStream
-    );
+    pc.addTrack(track, localStream);
   });
 
   pc.ontrack = (event) => {
-
-    remoteVideo.srcObject =
-      event.streams[0];
-
+    remoteVideo.srcObject = event.streams[0];
     document
-    .getElementById("status")
-    .innerText = "connected";
+      .getElementById("status")
+      .innerText = "connected";
   };
 
   pc.onicecandidate = (event) => {
-
     if (event.candidate) {
-
       socket.emit("signal", {
-
         code: currentCode,
-
         data: event.candidate
       });
     }
   };
 
   if (initiator) {
-
-    const offer =
-      await pc.createOffer();
-
-    await pc.setLocalDescription(
-      offer
-    );
-
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
     socket.emit("signal", {
-
       code: currentCode,
-
       data: offer
     });
   }
@@ -575,33 +558,21 @@ socket.on("signal", async (data) => {
   if (data.type === "offer") {
 
     await pc.setRemoteDescription(data);
-
-    const answer =
-      await pc.createAnswer();
-
-    await pc.setLocalDescription(
-      answer
-    );
-
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
     socket.emit("signal", {
-
       code: currentCode,
-
       data: answer
     });
 
-  } else if (
-    data.type === "answer"
-  ) {
+  } else if (data.type === "answer") {
 
     await pc.setRemoteDescription(data);
 
   } else {
 
     try {
-
       await pc.addIceCandidate(data);
-
     } catch {}
   }
 });
@@ -611,16 +582,15 @@ socket.on("signal", async (data) => {
 socket.on("full", () => {
 
   document
-  .getElementById("status")
-  .innerText = "room full";
+    .getElementById("status")
+    .innerText = "room full";
 
   document
-  .getElementById("entry")
-  .style.display = "";
+    .getElementById("entry")
+    .style.display = "";
 
   if (localStream) {
-    localStream.getTracks()
-      .forEach(t => t.stop());
+    localStream.getTracks().forEach(t => t.stop());
     localStream = null;
   }
 });
@@ -628,20 +598,34 @@ socket.on("full", () => {
 /* ---------- PEER LEFT ---------- */
 
 socket.on("peer_left", () => {
-
-  document
-  .getElementById("status")
-  .innerText = "peer disconnected";
-
-  if (pc) {
-    pc.close();
-    pc = null;
-  }
-
-  remoteVideo.srcObject = null;
-  dataChannel = null;
-  receiveChannel = null;
+  location.reload();
 });
+
+/* ---------- REMOTE TRANSFORM (incoming) ---------- */
+
+socket.on("transform", ({ posX, posY, scale }) => {
+
+  /* only apply if we are NOT the one controlling */
+  if (remoteControlActive) return;
+
+  videoX = posX;
+  videoY = posY;
+  videoScale = scale;
+
+  updateVideoTransform();
+});
+
+/* ---------- EMIT TRANSFORM (outgoing) ---------- */
+
+function emitTransform() {
+
+  socket.emit("transform", {
+    code: currentCode,
+    posX: videoX,
+    posY: videoY,
+    scale: videoScale
+  });
+}
 
 /* ---------- TRANSFORMS ---------- */
 
@@ -664,13 +648,15 @@ function updateFileTransform() {
 
 /* ---------- INIT DRAG ---------- */
 
-makeDraggable(remoteVideo, {
+const videoState = {
   get x() { return videoX; },
   set x(v) { videoX = v; },
   get y() { return videoY; },
   set y(v) { videoY = v; },
   update: updateVideoTransform
-});
+};
+
+makeDraggable(remoteVideo, videoState);
 
 const fileBoxState = {
   get x() { return fileX; },
@@ -682,47 +668,129 @@ const fileBoxState = {
 
 makeDraggable(fileBox, fileBoxState);
 
-/* ---------- WHEEL ---------- */
+/* ---------- WHEEL (desktop zoom) ---------- */
 
-window.addEventListener(
-  "wheel",
-  (e) => {
+window.addEventListener("wheel", (e) => {
 
-    e.preventDefault();
+  e.preventDefault();
+
+  const overFile =
+    e.target === fileBox ||
+    fileBox.contains(e.target);
+
+  if (overFile) {
+
+    fileScale += e.deltaY * -0.001;
+    fileScale = Math.min(Math.max(1, fileScale), 4);
+    updateFileTransform();
+
+  } else {
+
+    videoScale += e.deltaY * -0.001;
+    videoScale = Math.min(Math.max(1, videoScale), 4);
+    updateVideoTransform();
+
+    if (remoteControlActive) emitTransform();
+  }
+
+}, { passive: false });
+
+/* ---------- PINCH TO ZOOM (mobile) ---------- */
+
+let lastPinchDist = null;
+
+window.addEventListener("touchstart", (e) => {
+
+  if (e.touches.length === 2) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    lastPinchDist = Math.hypot(dx, dy);
+  }
+}, { passive: true });
+
+window.addEventListener("touchmove", (e) => {
+
+  if (e.touches.length !== 2) return;
+
+  const dx = e.touches[0].clientX - e.touches[1].clientX;
+  const dy = e.touches[0].clientY - e.touches[1].clientY;
+  const dist = Math.hypot(dx, dy);
+
+  if (lastPinchDist !== null) {
+
+    const delta = dist - lastPinchDist;
+
+    /* determine if pinch midpoint is over fileBox */
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const rect = fileBox.getBoundingClientRect();
 
     const overFile =
-      e.target === fileBox ||
-      fileBox.contains(e.target);
+      midX >= rect.left && midX <= rect.right &&
+      midY >= rect.top  && midY <= rect.bottom;
 
     if (overFile) {
 
-      fileScale +=
-        e.deltaY * -0.001;
-
-      fileScale =
-        Math.min(
-          Math.max(1, fileScale),
-          4
-        );
-
+      fileScale += delta * 0.005;
+      fileScale = Math.min(Math.max(1, fileScale), 4);
       updateFileTransform();
 
     } else {
 
-      videoScale +=
-        e.deltaY * -0.001;
-
-      videoScale =
-        Math.min(
-          Math.max(1, videoScale),
-          4
-        );
-
+      videoScale += delta * 0.005;
+      videoScale = Math.min(Math.max(1, videoScale), 4);
       updateVideoTransform();
+
+      if (remoteControlActive) emitTransform();
     }
-  },
-  { passive: false }
-);
+  }
+
+  lastPinchDist = dist;
+
+}, { passive: true });
+
+window.addEventListener("touchend", (e) => {
+  if (e.touches.length < 2) lastPinchDist = null;
+}, { passive: true });
+
+/* ---------- DOUBLE-TAP / DBLCLICK — REMOTE CONTROL TOGGLE ---------- */
+
+let lastTap = 0;
+
+remoteVideo.addEventListener("touchend", (e) => {
+
+  if (videoState.wasMoved && videoState.wasMoved()) return;
+
+  const now = Date.now();
+
+  if (now - lastTap < 300) {
+    toggleRemoteControl();
+    e.preventDefault();
+  }
+
+  lastTap = now;
+}, { passive: false });
+
+remoteVideo.addEventListener("dblclick", () => {
+
+  if (videoState.wasMoved && videoState.wasMoved()) return;
+  toggleRemoteControl();
+});
+
+function toggleRemoteControl() {
+
+  remoteControlActive = !remoteControlActive;
+
+  remoteVideo.classList.toggle(
+    "remote-control",
+    remoteControlActive
+  );
+
+  flash(remoteControlActive ? "REMOTE ON" : "REMOTE OFF");
+
+  /* immediately push current state to peer on activation */
+  if (remoteControlActive) emitTransform();
+}
 
 /* ---------- FILE UI REFS ---------- */
 
@@ -761,14 +829,19 @@ function hideProgress() {
 
 const CHUNK_SIZE = 16384;
 const BUFFER_THRESHOLD = 262144;
+const MAX_FILE_SIZE = 500 * 1024 * 1024; /* 500 MB */
 
 async function sendFile(buffer, filename) {
 
-  const channel =
-    dataChannel || receiveChannel;
+  const channel = dataChannel || receiveChannel;
 
   if (!channel || channel.readyState !== "open") {
     flash("NOT CONNECTED");
+    return;
+  }
+
+  if (buffer.byteLength > MAX_FILE_SIZE) {
+    flash("FILE TOO LARGE");
     return;
   }
 
@@ -790,8 +863,7 @@ async function sendFile(buffer, filename) {
 
       if (channel.bufferedAmount > BUFFER_THRESHOLD) {
 
-        channel.bufferedAmountLowThreshold =
-          BUFFER_THRESHOLD / 2;
+        channel.bufferedAmountLowThreshold = BUFFER_THRESHOLD / 2;
 
         channel.onbufferedamountlow = () => {
           channel.onbufferedamountlow = null;
@@ -876,7 +948,6 @@ function setupDataChannel(channel) {
       incomingReceived += event.data.byteLength;
 
       if (incomingSize > 0) {
-
         showProgress(
           Math.round((incomingReceived / incomingSize) * 100),
           incomingName
@@ -889,13 +960,11 @@ function setupDataChannel(channel) {
 /* ---------- FILE DROP ---------- */
 
 fileBox.addEventListener("dragover", (e) => {
-
   e.preventDefault();
   fileBox.classList.add("dragging");
 });
 
 fileBox.addEventListener("dragleave", () => {
-
   fileBox.classList.remove("dragging");
 });
 
@@ -914,10 +983,7 @@ fileBox.addEventListener("drop", async (e) => {
 /* ---------- MOBILE TAP TO PICK ---------- */
 
 fileBox.addEventListener("click", () => {
-
-  /* don't open picker if the user was dragging the box */
   if (fileBoxState.wasMoved && fileBoxState.wasMoved()) return;
-
   filePicker.click();
 });
 
@@ -932,24 +998,15 @@ filePicker.addEventListener("change", async () => {
   sendFile(buffer, file.name);
 });
 
-/* ---------- ENTER ---------- */
+/* ---------- ENTER KEY ---------- */
 
 document
-.getElementById("code")
-.addEventListener(
-  "keydown",
-  (e) => {
-
-    if (e.key === "Enter") {
-
-      join();
-    }
-  }
-);
+  .getElementById("code")
+  .addEventListener("keydown", (e) => {
+    if (e.key === "Enter") join();
+  });
 
 </script>
 
 </body>
 </html>
-
-/* ---------- GAY PRIDE 2026 ---------- */
