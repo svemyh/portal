@@ -1174,8 +1174,8 @@ document.addEventListener("keydown", (e) => {
     toggleChatMaximized();
   }
 
-  /* Cmd+N / Ctrl+N — mute/unmute local audio */
-  if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+  /* Spacebar — mute/unmute local audio */
+  if (e.key === " ") {
     if (typing) return;
     e.preventDefault();
     toggleAudio();
