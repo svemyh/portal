@@ -1173,7 +1173,22 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     toggleChatMaximized();
   }
+
+  /* Cmd+N / Ctrl+N — mute/unmute local audio */
+  if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+    if (typing) return;
+    e.preventDefault();
+    toggleAudio();
+  }
 });
+
+function toggleAudio() {
+  if (!localStream) return;
+  const audioTrack = localStream.getAudioTracks()[0];
+  if (!audioTrack) return;
+  audioTrack.enabled = !audioTrack.enabled;
+  flash(audioTrack.enabled ? "AUDIO ON" : "AUDIO OFF");
+}
 
 /* =====================================================================
    ENTER KEY (room code)
