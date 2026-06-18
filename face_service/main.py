@@ -123,6 +123,48 @@ def verify(req: VerifyRequest):
     }
 
 
+class DetectRequest(BaseModel):
+    image_b64: str
+
+
+@app.post("/detect")
+def detect(req: DetectRequest):
+    """
+    Detect faces in an image and return normalized bounding boxes (0-1 relative to image size).
+    Used by the frontend to draw real-time face boxes without face-api.js.
+    """
+    try:
+        img = decode_image(req.image_b64)
+        h, w = img.shape[:2]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            Image.fromarray(img).save(f.name)
+            tmp_path = f.name
+
+        faces = DeepFace.extract_faces(
+            img_path=tmp_path,
+            enforce_detection=True,
+            align=False
+        )
+        os.unlink(tmp_path)
+
+        boxes = []
+        for face in faces:
+            fa = face["facial_area"]
+            boxes.append({
+                "x": fa["x"] / w,
+                "y": fa["y"] / h,
+                "w": fa["w"] / w,
+                "h": fa["h"] / h,
+            })
+        return {"faces": boxes}
+    except Exception:
+        return {"faces": []}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

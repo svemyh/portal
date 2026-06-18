@@ -331,8 +331,12 @@ button {
   transition: opacity 0.2s ease;
 }
 
-/* hidden canvas for face analysis */
-#analysisCanvas { display: none; }
+#faceCanvas {
+  position: fixed;
+  pointer-events: none;
+  z-index: 1050;
+  display: none;
+}
 
 /* boxes hidden until connected */
 .hidden { visibility: hidden !important; }
@@ -354,8 +358,8 @@ button {
 <video id="remote" autoplay playsinline class="hidden"></video>
 <div id="videoLabel">VIDEO</div>
 
-<!-- off-screen canvas for pixel sampling -->
-<canvas id="analysisCanvas"></canvas>
+<!-- face bounding box overlay -->
+<canvas id="faceCanvas"></canvas>
 
 <input type="file" id="filePicker" style="display:none">
 
@@ -385,7 +389,6 @@ button {
 <div id="overlay" class="overlay"></div>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
 <script>
 
@@ -408,6 +411,7 @@ let controller   = null;
 let mySocketId   = null;
 
 socket.on("connect", () => { mySocketId = socket.id; });
+socket.on("assigned", ({ userNumber }) => { myUserNumber = userNumber; });
 
 /* ---- elements ---- */
 const remoteVideo  = document.getElementById("remote");
@@ -420,136 +424,116 @@ const chatSend     = document.getElementById("chatSend");
 const overlay      = document.getElementById("overlay");
 const labelLocal   = document.getElementById("labelLocal");
 const labelRemote  = document.getElementById("labelRemote");
-const analysisCanvas = document.getElementById("analysisCanvas");
-const analysisCtx    = analysisCanvas.getContext("2d", { willReadFrequently: true });
 
 /* =====================================================================
-   FACE ANALYSIS
+   FACE ANALYSIS  (server-side — no face-api.js)
    ===================================================================== */
 
-let faceApiReady = false;
+let myUserNumber = null;
+let localInfo    = null;
+let peerFaceBox  = null;   /* latest bbox received from peer via data channel */
 
-async function loadFaceApi() {
+const faceCanvas = document.getElementById("faceCanvas");
+const faceCtx    = faceCanvas.getContext("2d");
+
+/* ---- canvas overlay positioning ---- */
+
+function positionFaceCanvas() {
+  const rect = remoteVideo.getBoundingClientRect();
+  faceCanvas.style.left = rect.left + "px";
+  faceCanvas.style.top  = rect.top  + "px";
+  const dw = Math.round(rect.width);
+  const dh = Math.round(rect.height);
+  if (faceCanvas.width  !== dw) faceCanvas.width  = dw;
+  if (faceCanvas.height !== dh) faceCanvas.height = dh;
+}
+
+/* ---- draw peer's face box on the remote video canvas ---- */
+
+function drawPeerFaceBox(normBox) {
+  const rect = remoteVideo.getBoundingClientRect();
+  const dw = Math.round(rect.width);
+  const dh = Math.round(rect.height);
+  faceCanvas.width  = dw;
+  faceCanvas.height = dh;
+  faceCtx.clearRect(0, 0, dw, dh);
+
+  if (!normBox || !remoteVideo.videoWidth) return;
+
+  /* compute object-fit: cover mapping so box aligns with displayed content */
+  const vw = remoteVideo.videoWidth;
+  const vh = remoteVideo.videoHeight;
+  const videoAspect   = vw / vh;
+  const displayAspect = dw / dh;
+  let scale, ox, oy;
+  if (videoAspect > displayAspect) {
+    scale = dh / vh;  ox = (dw - vw * scale) / 2;  oy = 0;
+  } else {
+    scale = dw / vw;  ox = 0;  oy = (dh - vh * scale) / 2;
+  }
+
+  const px = ox + normBox.x * vw * scale;
+  const py = oy + normBox.y * vh * scale;
+  const pw = normBox.w * vw * scale;
+  const ph = normBox.h * vh * scale;
+
+  const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
+  const line1   = currentCode || "—";
+  const line2   = `USER ${peerNum}`;
+
+  faceCtx.save();
+  faceCtx.strokeStyle = "rgba(255,255,255,0.8)";
+  faceCtx.lineWidth   = 1;
+  faceCtx.strokeRect(Math.round(px), Math.round(py), Math.round(pw), Math.round(ph));
+
+  faceCtx.font = "10px 'Courier New', monospace";
+  const pad = 6, lh = 14;
+  const bw  = Math.max(Math.round(pw), faceCtx.measureText(line1).width + pad * 2);
+  const bh  = lh * 2 + pad;
+  const bx  = Math.round(px);
+  const by  = Math.max(0, Math.round(py) - bh - 2);
+
+  faceCtx.fillStyle = "rgba(0,0,0,0.75)";
+  faceCtx.fillRect(bx, by, bw, bh);
+  faceCtx.fillStyle = "rgba(255,255,255,0.9)";
+  faceCtx.fillText(line1, bx + pad, by + lh);
+  faceCtx.fillStyle = "rgba(255,255,255,0.5)";
+  faceCtx.fillText(line2, bx + pad, by + lh * 2);
+  faceCtx.restore();
+}
+
+/* ---- capture local frame and send to Python face service ---- */
+
+async function detectLocalFace() {
+  const localVideo = document.getElementById("local");
+  if (!localVideo.videoWidth || !localVideo.videoHeight) return;
+
   try {
-    await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
-    faceApiReady = true;
-    console.log("face-api ready");
+    const canvas = document.createElement("canvas");
+    canvas.width  = localVideo.videoWidth;
+    canvas.height = localVideo.videoHeight;
+    canvas.getContext("2d").drawImage(localVideo, 0, 0);
+    const image_b64 = canvas.toDataURL("image/jpeg", 0.7);
+
+    const res  = await fetch("/face/detect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_b64 })
+    });
+    const data = await res.json();
+
+    if (data.faces && data.faces.length > 0) {
+      localInfo = { detected: true };
+      const box = data.faces[0];          /* normalized 0-1 bbox from server */
+      sendDataMsg({ type: "face_box", box });
+      labelLocal.innerText = `${currentCode || "—"}\nUSER ${myUserNumber || "—"}`;
+      positionLabel(labelLocal, remoteVideo);
+    } else {
+      localInfo = null;
+    }
   } catch (e) {
-    console.warn("face-api failed to load:", e);
+    console.warn("face detect:", e);
   }
-}
-
-loadFaceApi();
-
-/* ---- colour naming ---- */
-
-function rgbName(r, g, b) {
-  /* very dark → black/dark-brown/dark */
-  const bright = (r + g + b) / 3;
-  if (bright < 40)  return "black";
-  if (bright < 80) {
-    if (r > g && r > b) return "dark brown";
-    return "dark";
-  }
-
-  /* very light → white/blonde/grey */
-  if (bright > 200) {
-    if (Math.abs(r - g) < 15 && Math.abs(g - b) < 15) return "white / grey";
-    return "blonde";
-  }
-
-  /* mid-range — find dominant hue */
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const sat = max === 0 ? 0 : (max - min) / max;
-
-  if (sat < 0.18) return "grey";
-
-  /* hue calculation */
-  let h = 0;
-  if (max === r) h = ((g - b) / (max - min)) % 6;
-  else if (max === g) h = (b - r) / (max - min) + 2;
-  else h = (r - g) / (max - min) + 4;
-  h = Math.round(h * 60);
-  if (h < 0) h += 360;
-
-  if (h < 20  || h >= 345) return "red";
-  if (h < 40)              return "orange";
-  if (h < 65)              return bright > 150 ? "blonde" : "brown";
-  if (h < 80)              return "yellow";
-  if (h < 160)             return "green";
-  if (h < 250)             return "blue";
-  if (h < 290)             return "purple";
-  if (h < 345)             return "pink";
-  return "unknown";
-}
-
-/* ---- sample a region of a video frame ---- */
-
-function sampleRegion(video, sx, sy, sw, sh) {
-  /* clamp to canvas */
-  const vw = analysisCanvas.width;
-  const vh = analysisCanvas.height;
-  sx = Math.max(0, Math.min(sx, vw - 1));
-  sy = Math.max(0, Math.min(sy, vh - 1));
-  sw = Math.max(1, Math.min(sw, vw - sx));
-  sh = Math.max(1, Math.min(sh, vh - sy));
-
-  const data = analysisCtx.getImageData(sx, sy, sw, sh).data;
-  let r = 0, g = 0, b = 0, count = 0;
-
-  /* sample every 4th pixel for speed */
-  for (let i = 0; i < data.length; i += 16) {
-    r += data[i];
-    g += data[i + 1];
-    b += data[i + 2];
-    count++;
-  }
-
-  if (count === 0) return { r: 0, g: 0, b: 0 };
-  return { r: r / count, g: g / count, b: b / count };
-}
-
-/* ---- analyse one video element, return label object ---- */
-
-async function analyseVideo(video) {
-  if (!faceApiReady || video.readyState < 2) return null;
-
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  if (!vw || !vh) return null;
-
-  analysisCanvas.width  = vw;
-  analysisCanvas.height = vh;
-  analysisCtx.drawImage(video, 0, 0, vw, vh);
-
-  const detection = await faceapi
-    .detectSingleFace(analysisCanvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }));
-  if (!detection) return null;
-
-  const { x, y, width, height } = detection.box;
-
-  /* hair: strip above face, same width, half-face height tall */
-  const hairY  = Math.max(0, y - height * 0.55);
-  const hairH  = Math.max(4, height * 0.5);
-  const hairRgb = sampleRegion(video, x + width * 0.1, hairY, width * 0.8, hairH);
-
-  /* shirt: strip below chin, same width, 40% face height tall */
-  const shirtY  = y + height * 1.05;
-  const shirtH  = Math.max(4, height * 0.4);
-  const shirtRgb = sampleRegion(video, x, shirtY, width, shirtH);
-
-  return {
-    hair:  rgbName(hairRgb.r, hairRgb.g, hairRgb.b),
-    shirt: rgbName(shirtRgb.r, shirtRgb.g, shirtRgb.b)
-  };
-}
-
-/* ---- format label text ---- */
-
-function formatLabel(info) {
-  if (!info) return "";
-  return `hair: ${info.hair}\nshirt: ${info.shirt}`;
 }
 
 /* ---- position a label at the bottom-left of a video element ---- */
@@ -561,29 +545,17 @@ function positionLabel(labelEl, videoEl) {
   labelEl.style.top    = "auto";
 }
 
-/* ---- main analysis loop — runs every 3 seconds ---- */
-
-let localInfo = null;
+/* ---- main analysis loop — runs every 5 seconds ---- */
 
 async function runAnalysis() {
-  /* analyse our own local camera only — result is shown on our own label
-     and sent to peer so they can display it on their remote label */
-  const localVideo = document.getElementById("local");
-  localInfo = await analyseVideo(localVideo);
-  labelLocal.innerText = formatLabel(localInfo);
-  positionLabel(labelLocal, remoteVideo);
-
-  /* send to peer via data channel */
-  if (localInfo) {
-    sendDataMsg({ type: "face_info", info: localInfo });
-  }
+  await detectLocalFace();
+  positionFaceCanvas();
+  drawPeerFaceBox(peerFaceBox);
 }
 
 function updateLabels() {
-  /* reposition local label when video moves */
   positionLabel(labelLocal, remoteVideo);
-
-  /* reposition remote label when video moves */
+  positionFaceCanvas();
   if (labelRemote.innerText) {
     const rect = remoteVideo.getBoundingClientRect();
     labelRemote.style.right  = (window.innerWidth - rect.right + 10) + "px";
@@ -598,11 +570,12 @@ let analysisInterval = null;
 
 function startAnalysis() {
   if (analysisInterval) return;
-  analysisInterval = setInterval(runAnalysis, 3000);
-  runAnalysis(); /* run immediately */
+  faceCanvas.style.display = "block";
+  positionFaceCanvas();
+  analysisInterval = setInterval(runAnalysis, 5000);
+  runAnalysis();
 }
 
-/* reposition labels on resize / video transform */
 window.addEventListener("resize", updateLabels);
 
 /* =====================================================================
@@ -858,17 +831,18 @@ function setupDataChannel(channel) {
       /* chat */
       if (msg.type === "chat") appendChat(msg.text, "them");
 
-      /* peer's face analysis result */
-      if (msg.type === "face_info") {
-        /* peer sends us their own analysis — we show it on labelRemote */
-        const info = msg.info;
+      /* peer's face bbox from server — draw box and update corner label */
+      if (msg.type === "face_box") {
+        peerFaceBox = msg.box;
+        drawPeerFaceBox(peerFaceBox);
+        const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
         const rect = remoteVideo.getBoundingClientRect();
         labelRemote.style.right  = (window.innerWidth - rect.right + 10) + "px";
         labelRemote.style.bottom = (window.innerHeight - rect.bottom + 10) + "px";
         labelRemote.style.left   = "auto";
         labelRemote.style.top    = "auto";
         labelRemote.style.textAlign = "right";
-        labelRemote.innerText = formatLabel(info);
+        labelRemote.innerText = `${currentCode || "—"}\nUSER ${peerNum}`;
       }
 
       /* global ui state sync */
@@ -1258,7 +1232,7 @@ function toggleVideo() {
   if (!localStream) return;
   const videoTrack = localStream.getVideoTracks()[0];
   if (!videoTrack) return;
-  const next = !videoTrack.enabled;https://portal.gripe/buy.html
+  const next = !videoTrack.enabled;
   sendDataMsg({ type: "ui_state", key: "video_enabled", value: next });
 }
 
