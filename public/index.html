@@ -834,6 +834,7 @@ function setupDataChannel(channel) {
       if (msg.type === "ui_state") {
         if (msg.key === "chat_maximized")  applyChatMaximized(msg.value);
         if (msg.key === "video_minimized") applyVideoMinimized(msg.value);
+        if (msg.key === "video_enabled")   applyVideoEnabled(msg.value);
       }
 
     } else {
@@ -1204,12 +1205,21 @@ function toggleAudio() {
   flash(audioTrack.enabled ? "AUDIO ON" : "AUDIO OFF");
 }
 
+function applyVideoEnabled(val) {
+  if (!localStream) return;
+  const videoTrack = localStream.getVideoTracks()[0];
+  if (!videoTrack) return;
+  videoTrack.enabled = val;
+  flash(val ? "CAM ON" : "CAM OFF");
+}
+
 function toggleVideo() {
   if (!localStream) return;
   const videoTrack = localStream.getVideoTracks()[0];
   if (!videoTrack) return;
-  videoTrack.enabled = !videoTrack.enabled;
-  flash(videoTrack.enabled ? "CAM ON" : "CAM OFF");
+  const next = !videoTrack.enabled;
+  applyVideoEnabled(next);
+  sendDataMsg({ type: "ui_state", key: "video_enabled", value: next });
 }
 
 /* =====================================================================
