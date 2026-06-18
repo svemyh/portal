@@ -335,7 +335,7 @@ button {
 #analysisCanvas { display: none; }
 
 /* boxes hidden until connected */
-#fileBox, #chatBox, #remote { display: none; }
+#fileBox, #chatBox, #remote { visibility: hidden; }
 
 </style>
 </head>
@@ -710,9 +710,9 @@ socket.on("peer", async ({ initiator }) => {
   pc.ontrack = (event) => {
     remoteVideo.srcObject = event.streams[0];
     document.getElementById("status").innerText = "connected";
-    remoteVideo.style.display = "";
-    fileBox.style.display = "";
-    chatBox.style.display = "";
+    remoteVideo.style.visibility = "";
+    fileBox.style.visibility = "";
+    chatBox.style.visibility = "";
     startAnalysis();
   };
 
