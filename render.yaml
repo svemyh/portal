@@ -1,0 +1,47 @@
+services:
+  # ─── Node.js signalling + key server ────────────────────────────────────────
+  - type: web
+    name: portal
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /ice-config
+    envVars:
+      - key: PORTAL_KEYS_ENABLED
+        value: "true"
+      - key: SOLANA_RPC_URL
+        sync: false       # fill in Render dashboard
+      - key: PROGRAM_ID
+        sync: false
+      - key: TREASURY_PUBKEY
+        sync: false
+      - key: ADMIN_SECRET
+        generateValue: true
+      - key: FACE_SERVICE_URL
+        sync: false       # set to the face service URL after it deploys
+      - key: TURN_URL_UDP
+        sync: false
+      - key: TURN_URL_TCP
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+
+  # ─── Python face recognition service ────────────────────────────────────────
+  - type: web
+    name: portal-face
+    runtime: python
+    plan: free
+    rootDir: face_service
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /health
+    disk:
+      name: face-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: FACE_DATA_FILE
+        value: /data/encodings.json
