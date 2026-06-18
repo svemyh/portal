@@ -347,8 +347,13 @@ button {
   z-index: 3000;
   font-size: 10px;
   letter-spacing: 1px;
-  pointer-events: none;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transform: translate(0px,0px);
 }
+
+#helpBox:active { cursor: grabbing; }
 
 #helpInner {
   border: 1px solid rgba(255,255,255,0.12);
@@ -411,7 +416,7 @@ button {
 <div id="labelRemote" class="face-label"></div>
 
 <!-- KEYBOARD SHORTCUT LEGEND -->
-<div id="helpBox">
+<div id="helpBox" class="hidden">
   <div id="helpInner">
     <div class="help-row"><span class="help-key">⌘</span><span class="help-desc">PORTAL v0.0.9</span></div>
     <div class="help-divider"></div>
@@ -549,7 +554,7 @@ function drawPeerFaceBox(normBox) {
 
   const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
   const line1   = currentCode || "—";
-  const line2   = `USER ${peerNum}`;
+  const line2   = `#${peerNum}`;
 
   faceCtx.save();
   faceCtx.strokeStyle = "rgba(255,255,255,0.8)";
@@ -601,15 +606,15 @@ async function detectLocalFace() {
       localInfo = { detected: true };
       const box = data.faces[0];
       sendDataMsg({ type: "face_box", box });
-      labelLocal.innerText = `${currentCode || "—"}\nUSER ${myUserNumber || "—"}`;
+      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}`;
     } else {
       localInfo = null;
-      labelLocal.innerText = `${currentCode || "—"}\nUSER ${myUserNumber || "—"}\nE:NO_FACE`;
+      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\nE:NO_FACE`;
     }
   } catch (e) {
     clearTimeout(timeout);
     const code = e.name === "AbortError" ? "E:SVC_TIMEOUT" : "E:SVC_OFFLINE";
-    labelLocal.innerText = `${currentCode || "—"}\nUSER ${myUserNumber || "—"}\n${code}`;
+    labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\n${code}`;
     console.warn("face detect:", e);
   }
   positionLabel(labelLocal, remoteVideo);
@@ -654,7 +659,7 @@ function startAnalysis() {
 
   /* set corner labels immediately so key/user shows before detection completes */
   const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
-  labelLocal.innerText  = `${currentCode || "—"}\nUSER ${myUserNumber || "—"}\nE:DETECTING`;
+  labelLocal.innerText  = `${currentCode || "—"}\n#${myUserNumber || "—"}\nE:DETECTING`;
   positionLabel(labelLocal, remoteVideo);
   const rect = remoteVideo.getBoundingClientRect();
   labelRemote.style.right  = (window.innerWidth - rect.right + 10) + "px";
@@ -662,7 +667,7 @@ function startAnalysis() {
   labelRemote.style.left   = "auto";
   labelRemote.style.top    = "auto";
   labelRemote.style.textAlign = "right";
-  labelRemote.innerText = `${currentCode || "—"}\nUSER ${peerNum}\nE:AWAITING`;
+  labelRemote.innerText = `${currentCode || "—"}\n#${peerNum}\nE:AWAITING`;
 
   canvasStatus("E:AWAITING_PEER");
 
@@ -816,6 +821,7 @@ socket.on("peer", async ({ initiator }) => {
     remoteVideo.classList.remove("hidden");
     fileBox.classList.remove("hidden");
     chatBox.classList.remove("hidden");
+    helpBoxEl.classList.remove("hidden");
     startAnalysis();
 
     if (socket._faceWarning) {
@@ -941,7 +947,7 @@ function setupDataChannel(channel) {
         labelRemote.style.left   = "auto";
         labelRemote.style.top    = "auto";
         labelRemote.style.textAlign = "right";
-        labelRemote.innerText = `${currentCode || "—"}\nUSER ${peerNum}`;
+        labelRemote.innerText = `${currentCode || "—"}\n#${peerNum}`;
       }
 
       /* global ui state sync */
@@ -1045,6 +1051,18 @@ const chatState = {
   }
 };
 makeDraggable(chatBox, chatState);
+
+let helpX = 0, helpY = 0;
+function updateHelpTransform() {
+  helpBox.style.transform = `translate(${helpX}px,${helpY}px)`;
+}
+const helpBoxEl  = document.getElementById("helpBox");
+const helpState  = {
+  get x() { return helpX; }, set x(v) { helpX = v; },
+  get y() { return helpY; }, set y(v) { helpY = v; },
+  update: updateHelpTransform,
+};
+makeDraggable(helpBoxEl, helpState);
 
 /* =====================================================================
    WHEEL + PINCH
