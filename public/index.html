@@ -335,7 +335,7 @@ button {
 #analysisCanvas { display: none; }
 
 /* boxes hidden until connected */
-#fileBox, #chatBox, #remote { visibility: hidden; }
+.hidden { visibility: hidden !important; }
 
 </style>
 </head>
@@ -351,7 +351,7 @@ button {
 </div>
 
 <video id="local"  autoplay muted    playsinline></video>
-<video id="remote" autoplay playsinline></video>
+<video id="remote" autoplay playsinline class="hidden"></video>
 <div id="videoLabel">VIDEO</div>
 
 <!-- off-screen canvas for pixel sampling -->
@@ -364,7 +364,7 @@ button {
 <div id="labelRemote" class="face-label"></div>
 
 <!-- FILE BOX -->
-<div id="fileBox" class="box">
+<div id="fileBox" class="box hidden">
   <div id="fileBody">
     <span id="fileText">DROP FILE</span>
     <div id="fileProgress"><div id="fileProgressBar"></div></div>
@@ -373,7 +373,7 @@ button {
 </div>
 
 <!-- CHAT BOX -->
-<div id="chatBox" class="box">
+<div id="chatBox" class="box hidden">
   <div class="box-header" id="chatHandle">CHAT</div>
   <div id="chatLog"></div>
   <div id="chatInputRow">
@@ -710,9 +710,9 @@ socket.on("peer", async ({ initiator }) => {
   pc.ontrack = (event) => {
     remoteVideo.srcObject = event.streams[0];
     document.getElementById("status").innerText = "connected";
-    remoteVideo.style.visibility = "";
-    fileBox.style.visibility = "";
-    chatBox.style.visibility = "";
+    remoteVideo.classList.remove("hidden");
+    fileBox.classList.remove("hidden");
+    chatBox.classList.remove("hidden");
     startAnalysis();
   };
 
