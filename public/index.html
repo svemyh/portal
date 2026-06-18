@@ -1187,6 +1187,13 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     toggleAudio();
   }
+
+  /* Cmd+D / Ctrl+D — enable/disable local video */
+  if ((e.metaKey || e.ctrlKey) && e.key === "d") {
+    if (typing) return;
+    e.preventDefault();
+    toggleVideo();
+  }
 });
 
 function toggleAudio() {
@@ -1195,6 +1202,14 @@ function toggleAudio() {
   if (!audioTrack) return;
   audioTrack.enabled = !audioTrack.enabled;
   flash(audioTrack.enabled ? "AUDIO ON" : "AUDIO OFF");
+}
+
+function toggleVideo() {
+  if (!localStream) return;
+  const videoTrack = localStream.getVideoTracks()[0];
+  if (!videoTrack) return;
+  videoTrack.enabled = !videoTrack.enabled;
+  flash(videoTrack.enabled ? "CAM ON" : "CAM OFF");
 }
 
 /* =====================================================================
