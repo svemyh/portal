@@ -830,6 +830,12 @@ function setupDataChannel(channel) {
         labelRemote.innerText = formatLabel(info);
       }
 
+      /* global ui state sync */
+      if (msg.type === "ui_state") {
+        if (msg.key === "chat_maximized")  applyChatMaximized(msg.value);
+        if (msg.key === "video_minimized") applyVideoMinimized(msg.value);
+      }
+
     } else {
       /* binary = file chunk */
       incomingChunks.push(event.data);
@@ -1104,15 +1110,17 @@ chatInput.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: 
    CHAT MAXIMIZE TOGGLE (Cmd+C / Ctrl+C)
    ===================================================================== */
 
-function toggleChatMaximized() {
-  chatMaximized = !chatMaximized;
+function applyChatMaximized(val) {
+  chatMaximized = val;
   chatBox.classList.toggle("maximized", chatMaximized);
-
-  /* reset offset so it snaps cleanly to center */
   chatX = 0; chatY = 0;
   updateChatTransform();
-
   flash(chatMaximized ? "CHAT +" : "CHAT —");
+}
+
+function toggleChatMaximized() {
+  applyChatMaximized(!chatMaximized);
+  sendDataMsg({ type: "ui_state", key: "chat_maximized", value: chatMaximized });
 }
 
 /* =====================================================================
@@ -1121,26 +1129,25 @@ function toggleChatMaximized() {
 
 const videoLabel = document.getElementById("videoLabel");
 
-function toggleVideoMinimized() {
-  videoMinimized = !videoMinimized;
+function applyVideoMinimized(val) {
+  videoMinimized = val;
   remoteVideo.classList.toggle("minimized", videoMinimized);
-
+  videoX = 0; videoY = 0; videoScale = 1;
   if (videoMinimized) {
-    /* reset position to top-left origin on minimize */
-    videoX = 0; videoY = 0; videoScale = 1;
     videoLabel.style.display = "block";
-    /* position label inside top-left of box */
     positionVideoLabel();
     flash("VIDEO —");
   } else {
-    /* restore to center */
-    videoX = 0; videoY = 0; videoScale = 1;
     videoLabel.style.display = "none";
     flash("VIDEO +");
   }
-
   updateVideoTransform();
   updateLabels();
+}
+
+function toggleVideoMinimized() {
+  applyVideoMinimized(!videoMinimized);
+  sendDataMsg({ type: "ui_state", key: "video_minimized", value: videoMinimized });
 }
 
 function positionVideoLabel() {
