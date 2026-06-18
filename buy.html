@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>portal — get a key</title>
+<style>
+
+* { font-family: "Courier New", monospace; box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: black;
+  color: white;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: normal;
+  margin: 0 0 8px;
+  letter-spacing: 2px;
+}
+
+.sub {
+  font-size: 11px;
+  opacity: 0.4;
+  letter-spacing: 2px;
+  margin-bottom: 60px;
+}
+
+.card {
+  border: 1px solid rgba(255,255,255,0.15);
+  padding: 40px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.row .label { opacity: 0.4; }
+.row .value { }
+
+.divider {
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+button {
+  width: 100%;
+  padding: 14px;
+  background: white;
+  color: black;
+  border: none;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+button.secondary {
+  background: transparent;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.2);
+  margin-top: -8px;
+}
+
+#status {
+  font-size: 11px;
+  letter-spacing: 1px;
+  opacity: 0.6;
+  text-align: center;
+  min-height: 16px;
+}
+
+#keyDisplay {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+#keyValue {
+  font-size: 32px;
+  letter-spacing: 8px;
+  padding: 20px;
+  border: 1px solid rgba(255,255,255,0.3);
+  width: 100%;
+}
+
+#keyNote {
+  font-size: 10px;
+  opacity: 0.4;
+  letter-spacing: 1px;
+  line-height: 1.6;
+}
+
+</style>
+</head>
+<body>
+
+<h1>portal</h1>
+<div class="sub">v0.0.7 — get a key</div>
+
+<div class="card">
+
+  <div class="row">
+    <span class="label">PRICE</span>
+    <span class="value" id="priceDisplay">— SOL</span>
+  </div>
+
+  <div class="row">
+    <span class="label">KEY LENGTH</span>
+    <span class="value">8 CHARACTERS</span>
+  </div>
+
+  <div class="row">
+    <span class="label">NETWORK</span>
+    <span class="value">SOLANA MAINNET</span>
+  </div>
+
+  <div class="row">
+    <span class="label">WALLET</span>
+    <span class="value" id="walletDisplay">NOT CONNECTED</span>
+  </div>
+
+  <hr class="divider">
+
+  <div id="status"></div>
+
+  <button id="connectBtn" onclick="connectWallet()">CONNECT WALLET</button>
+  <button id="buyBtn" onclick="purchase()" disabled>PURCHASE KEY</button>
+
+  <div id="keyDisplay">
+    <div id="keyValue"></div>
+    <div id="keyNote">
+      SAVE THIS KEY — IT CANNOT BE RECOVERED.<br>
+      SHARE IT WITH ONE OTHER PERSON TO OPEN A PORTAL SESSION.
+    </div>
+    <button class="secondary" onclick="copyKey()">COPY KEY</button>
+  </div>
+
+</div>
+
+<!--
+  Solana web3.js + wallet adapter via CDN.
+  In production replace with your bundled version.
+-->
+<script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.91.1/lib/index.iife.min.js"></script>
+
+<script>
+
+/* ------------------------------------------------------------------ */
+/*  Config — update PROGRAM_ID and TREASURY after deployment           */
+/* ------------------------------------------------------------------ */
+
+const PROGRAM_ID  = "REPLACE_WITH_YOUR_PROGRAM_ID";
+const TREASURY    = "REPLACE_WITH_YOUR_TREASURY_WALLET";
+const RPC_URL     = "https://api.mainnet-beta.solana.com";
+
+/* Fetch actual price from your server (which reads it from the chain).
+   Fallback to a hardcoded display if the endpoint isn't set up yet.  */
+async function loadPrice() {
+  try {
+    const res = await fetch("/key-price");
+    if (res.ok) {
+      const { lamports } = await res.json();
+      const sol = lamports / 1e9;
+      document.getElementById("priceDisplay").innerText = sol + " SOL";
+    }
+  } catch {
+    document.getElementById("priceDisplay").innerText = "SEE SITE";
+  }
+}
+
+loadPrice();
+
+/* ------------------------------------------------------------------ */
+/*  Wallet                                                              */
+/* ------------------------------------------------------------------ */
+
+let provider = null;
+let walletPubkey = null;
+const connection = new solanaWeb3.Connection(RPC_URL, "confirmed");
+
+function setStatus(msg) {
+  document.getElementById("status").innerText = msg;
+}
+
+async function connectWallet() {
+  if (!window.solana) {
+    setStatus("Phantom wallet not found — install from phantom.app");
+    return;
+  }
+
+  try {
+    const resp = await window.solana.connect();
+    walletPubkey = resp.publicKey;
+    provider = window.solana;
+
+    const short = walletPubkey.toString().slice(0, 4) + "..." +
+                  walletPubkey.toString().slice(-4);
+    document.getElementById("walletDisplay").innerText = short;
+    document.getElementById("connectBtn").innerText = "CONNECTED";
+    document.getElementById("connectBtn").disabled = true;
+    document.getElementById("buyBtn").disabled = false;
+    setStatus("wallet connected");
+  } catch (e) {
+    setStatus("connection rejected");
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Purchase                                                            */
+/* ------------------------------------------------------------------ */
+
+async function purchase() {
+  if (!provider || !walletPubkey) {
+    setStatus("connect wallet first");
+    return;
+  }
+
+  document.getElementById("buyBtn").disabled = true;
+  setStatus("preparing transaction...");
+
+  try {
+    /*
+      In a full Anchor integration you would:
+        1. Import the IDL
+        2. Use AnchorProvider + Program to call purchase_key()
+
+      Here we call your server's /purchase endpoint which:
+        - Builds the Anchor instruction server-side
+        - Returns a base64-encoded partially-signed transaction
+        - Client signs + sends it
+        - Server listens for the KeyPurchased event and returns the key
+    */
+
+    /* Step 1: request transaction from server */
+    const res = await fetch("/purchase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ buyer: walletPubkey.toString() })
+    });
+
+    if (!res.ok) throw new Error(await res.text());
+    const { transaction: txBase64, sessionId } = await res.json();
+
+    setStatus("approve in wallet...");
+
+    /* Step 2: deserialise, sign, send */
+    const txBytes = Uint8Array.from(atob(txBase64), c => c.charCodeAt(0));
+    const tx = solanaWeb3.Transaction.from(txBytes);
+
+    const { signature } = await provider.signAndSendTransaction(tx);
+    setStatus("confirming on-chain...");
+
+    await connection.confirmTransaction(signature, "confirmed");
+
+    /* Step 3: fetch the generated key from server */
+    const keyRes = await fetch(`/key/${sessionId}`);
+    if (!keyRes.ok) throw new Error("key fetch failed");
+    const { portalKey } = await keyRes.json();
+
+    showKey(portalKey);
+
+  } catch (e) {
+    setStatus("error: " + (e.message || e));
+    document.getElementById("buyBtn").disabled = false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Display key                                                         */
+/* ------------------------------------------------------------------ */
+
+function showKey(key) {
+  document.getElementById("keyValue").innerText = key;
+  document.getElementById("keyDisplay").style.display = "flex";
+  document.getElementById("buyBtn").style.display = "none";
+  setStatus("payment confirmed");
+}
+
+function copyKey() {
+  const key = document.getElementById("keyValue").innerText;
+  navigator.clipboard.writeText(key).then(() => {
+    setStatus("copied to clipboard");
+  });
+}
+
+</script>
+</body>
+</html>

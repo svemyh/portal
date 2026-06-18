@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>portal</title>
+
+<style>
+
+* {
+  font-family: "Courier New", monospace;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: black;
+  color: white;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+#title {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9000;
+  text-align: center;
+  font-size: 14px;
+}
+
+#title span {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+#entry {
+  position: relative;
+  z-index: 5000;
+}
+
+input {
+  background: black;
+  color: white;
+  border: 1px solid white;
+  padding: 10px;
+}
+
+button {
+  padding: 10px;
+  background: white;
+  color: black;
+  border: none;
+  margin-left: 10px;
+  cursor: pointer;
+}
+
+#status {
+  position: fixed;
+  top: 55px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5000;
+  font-size: 12px;
+}
+
+/* ---------- VIDEO ---------- */
+
+#remote {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 575px;
+  height: 575px;
+  max-width: 92vw;
+  max-height: 92vw;
+  object-fit: cover;
+  background: black;
+  transform: translate(-50%, -50%) translate(0px,0px) scale(1);
+  transform-origin: center center;
+  border: 1px solid rgba(255,255,255,0.08);
+  z-index: 1000;
+  touch-action: none;
+  cursor: grab;
+  transition: width 0.2s ease, height 0.2s ease, max-width 0.2s ease, max-height 0.2s ease;
+}
+
+#remote.minimized {
+  width: 240px;
+  height: 240px;
+  max-width: 240px;
+  max-height: 240px;
+  top: 0;
+  left: 0;
+  transform: translate(0px,0px) scale(1);
+}
+
+#remote.remote-control {
+  border-color: rgba(255,255,255,0.5);
+  cursor: crosshair;
+}
+
+/* label shown inside video box when minimized */
+#videoLabel {
+  position: fixed;
+  z-index: 1050;
+  font-size: 10px;
+  letter-spacing: 2px;
+  opacity: 0.4;
+  pointer-events: none;
+  display: none;
+}
+
+#local {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------- FACE LABELS ---------- */
+
+.face-label {
+  position: fixed;
+  z-index: 1100;
+  font-size: 10px;
+  letter-spacing: 1px;
+  line-height: 1.6;
+  pointer-events: none;
+  opacity: 0.85;
+  text-shadow: 0 0 6px black, 0 0 3px black;
+}
+
+/* local label: bottom-left corner of video */
+#labelLocal {
+  /* positioned dynamically in JS */
+}
+
+/* remote label: bottom-left corner of video */
+#labelRemote {
+  /* positioned dynamically in JS */
+}
+
+/* ---------- BOXES ---------- */
+
+.box {
+  position: fixed;
+  width: 240px;
+  height: 240px;
+  background: rgba(0,0,0,0.95);
+  border: 1px solid rgba(255,255,255,0.15);
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  letter-spacing: 1px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+/* ---------- FILE BOX ---------- */
+
+#fileBox {
+  right: 25px;
+  bottom: 25px;
+  transform: translate(0px,0px) scale(1);
+}
+
+#fileBox.dragging { border-color: white; }
+
+#fileBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+#fileProgress {
+  width: 80%;
+  height: 1px;
+  background: rgba(255,255,255,0.15);
+  margin-top: 14px;
+  display: none;
+}
+
+#fileProgressBar {
+  height: 100%;
+  width: 0%;
+  background: white;
+  transition: width 0.1s linear;
+}
+
+#fileLabel {
+  margin-top: 10px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  opacity: 0.5;
+}
+
+/* ---------- CHAT BOX ---------- */
+
+#chatBox {
+  left: 25px;
+  bottom: 25px;
+  transform: translate(0px,0px) scale(1);
+  flex-direction: column;
+  cursor: grab;
+  transition: width 0.2s ease, height 0.2s ease, left 0.2s ease, bottom 0.2s ease, top 0.2s ease;
+}
+
+#chatBox.maximized {
+  width: 575px;
+  height: 575px;
+  max-width: 92vw;
+  max-height: 92vw;
+  top: 50%;
+  left: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%) translate(0px, 0px);
+  z-index: 1500;
+}
+
+#chatBox.maximized .box-header {
+  font-size: 12px;
+  padding: 14px 16px 12px;
+}
+
+#chatBox.maximized .chat-msg {
+  font-size: 13px;
+}
+
+#chatBox.maximized #chatInput {
+  font-size: 13px;
+  padding: 12px 14px;
+}
+
+#chatBox.maximized #chatSend {
+  font-size: 12px;
+  padding: 12px 14px;
+}
+
+#chatBox .box-header {
+  padding: 10px 12px 8px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  opacity: 0.4;
+  cursor: grab;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+#chatLog {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  scrollbar-width: none;
+}
+
+#chatLog::-webkit-scrollbar { display: none; }
+
+.chat-msg {
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.5px;
+  word-break: break-word;
+}
+
+.chat-msg.me   { text-align: right; opacity: 1; }
+.chat-msg.them { text-align: left;  opacity: 0.6; }
+
+#chatInputRow {
+  display: flex;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+
+#chatInput {
+  flex: 1;
+  background: transparent;
+  color: white;
+  border: none;
+  padding: 8px 10px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  outline: none;
+  cursor: text;
+  user-select: text;
+}
+
+#chatInput::placeholder { opacity: 0.3; }
+
+#chatSend {
+  background: transparent;
+  color: white;
+  border: none;
+  border-left: 1px solid rgba(255,255,255,0.08);
+  padding: 8px 10px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  margin-left: 0;
+  user-select: none;
+}
+
+#chatSend:hover { background: rgba(255,255,255,0.05); }
+
+/* ---------- OVERLAY ---------- */
+
+.overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 16px;
+  letter-spacing: 2px;
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* hidden canvas for face analysis */
+#analysisCanvas { display: none; }
+
+/* boxes hidden until connected */
+.hidden { visibility: hidden !important; }
+
+</style>
+</head>
+
+<body>
+
+<div id="title">portal<br><span>v0.0.7</span></div>
+<div id="status">idle</div>
+
+<div id="entry">
+  <input id="code" placeholder="enter code">
+  <button onclick="join()">enter</button>
+</div>
+
+<video id="local"  autoplay muted    playsinline></video>
+<video id="remote" autoplay playsinline class="hidden"></video>
+<div id="videoLabel">VIDEO</div>
+
+<!-- off-screen canvas for pixel sampling -->
+<canvas id="analysisCanvas"></canvas>
+
+<input type="file" id="filePicker" style="display:none">
+
+<!-- face labels -->
+<div id="labelLocal"  class="face-label"></div>
+<div id="labelRemote" class="face-label"></div>
+
+<!-- FILE BOX -->
+<div id="fileBox" class="box hidden">
+  <div id="fileBody">
+    <span id="fileText">DROP FILE</span>
+    <div id="fileProgress"><div id="fileProgressBar"></div></div>
+    <div id="fileLabel"></div>
+  </div>
+</div>
+
+<!-- CHAT BOX -->
+<div id="chatBox" class="box hidden">
+  <div class="box-header" id="chatHandle">CHAT</div>
+  <div id="chatLog"></div>
+  <div id="chatInputRow">
+    <input id="chatInput" placeholder="message..." autocomplete="off">
+    <button id="chatSend">SEND</button>
+  </div>
+</div>
+
+<div id="overlay" class="overlay"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+<script>
+
+/* =====================================================================
+   PORTAL — v0.0.7
+   ===================================================================== */
+
+const socket = io();
+
+let pc, dataChannel, receiveChannel, localStream, currentCode;
+
+let videoX = 0, videoY = 0, videoScale = 1;
+let videoMinimized = false;
+let fileX  = 0, fileY  = 0, fileScale  = 1;
+let chatX  = 0, chatY  = 0;
+let chatMaximized = false;
+
+/* remote control — shared state via data channel */
+let controller   = null;
+let mySocketId   = null;
+
+socket.on("connect", () => { mySocketId = socket.id; });
+
+/* ---- elements ---- */
+const remoteVideo  = document.getElementById("remote");
+const fileBox      = document.getElementById("fileBox");
+const chatBox      = document.getElementById("chatBox");
+const chatHandle   = document.getElementById("chatHandle");
+const chatLog      = document.getElementById("chatLog");
+const chatInput    = document.getElementById("chatInput");
+const chatSend     = document.getElementById("chatSend");
+const overlay      = document.getElementById("overlay");
+const labelLocal   = document.getElementById("labelLocal");
+const labelRemote  = document.getElementById("labelRemote");
+const analysisCanvas = document.getElementById("analysisCanvas");
+const analysisCtx    = analysisCanvas.getContext("2d", { willReadFrequently: true });
+
+/* =====================================================================
+   FACE ANALYSIS
+   ===================================================================== */
+
+let faceApiReady = false;
+
+async function loadFaceApi() {
+  try {
+    await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
+    faceApiReady = true;
+    console.log("face-api ready");
+  } catch (e) {
+    console.warn("face-api failed to load:", e);
+  }
+}
+
+loadFaceApi();
+
+/* ---- colour naming ---- */
+
+function rgbName(r, g, b) {
+  /* very dark → black/dark-brown/dark */
+  const bright = (r + g + b) / 3;
+  if (bright < 40)  return "black";
+  if (bright < 80) {
+    if (r > g && r > b) return "dark brown";
+    return "dark";
+  }
+
+  /* very light → white/blonde/grey */
+  if (bright > 200) {
+    if (Math.abs(r - g) < 15 && Math.abs(g - b) < 15) return "white / grey";
+    return "blonde";
+  }
+
+  /* mid-range — find dominant hue */
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const sat = max === 0 ? 0 : (max - min) / max;
+
+  if (sat < 0.18) return "grey";
+
+  /* hue calculation */
+  let h = 0;
+  if (max === r) h = ((g - b) / (max - min)) % 6;
+  else if (max === g) h = (b - r) / (max - min) + 2;
+  else h = (r - g) / (max - min) + 4;
+  h = Math.round(h * 60);
+  if (h < 0) h += 360;
+
+  if (h < 20  || h >= 345) return "red";
+  if (h < 40)              return "orange";
+  if (h < 65)              return bright > 150 ? "blonde" : "brown";
+  if (h < 80)              return "yellow";
+  if (h < 160)             return "green";
+  if (h < 250)             return "blue";
+  if (h < 290)             return "purple";
+  if (h < 345)             return "pink";
+  return "unknown";
+}
+
+/* ---- sample a region of a video frame ---- */
+
+function sampleRegion(video, sx, sy, sw, sh) {
+  /* clamp to canvas */
+  const vw = analysisCanvas.width;
+  const vh = analysisCanvas.height;
+  sx = Math.max(0, Math.min(sx, vw - 1));
+  sy = Math.max(0, Math.min(sy, vh - 1));
+  sw = Math.max(1, Math.min(sw, vw - sx));
+  sh = Math.max(1, Math.min(sh, vh - sy));
+
+  const data = analysisCtx.getImageData(sx, sy, sw, sh).data;
+  let r = 0, g = 0, b = 0, count = 0;
+
+  /* sample every 4th pixel for speed */
+  for (let i = 0; i < data.length; i += 16) {
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    count++;
+  }
+
+  if (count === 0) return { r: 0, g: 0, b: 0 };
+  return { r: r / count, g: g / count, b: b / count };
+}
+
+/* ---- analyse one video element, return label object ---- */
+
+async function analyseVideo(video) {
+  if (!faceApiReady || video.readyState < 2) return null;
+
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return null;
+
+  analysisCanvas.width  = vw;
+  analysisCanvas.height = vh;
+  analysisCtx.drawImage(video, 0, 0, vw, vh);
+
+  const detection = await faceapi
+    .detectSingleFace(analysisCanvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }));
+  if (!detection) return null;
+
+  const { x, y, width, height } = detection.box;
+
+  /* hair: strip above face, same width, half-face height tall */
+  const hairY  = Math.max(0, y - height * 0.55);
+  const hairH  = Math.max(4, height * 0.5);
+  const hairRgb = sampleRegion(video, x + width * 0.1, hairY, width * 0.8, hairH);
+
+  /* shirt: strip below chin, same width, 40% face height tall */
+  const shirtY  = y + height * 1.05;
+  const shirtH  = Math.max(4, height * 0.4);
+  const shirtRgb = sampleRegion(video, x, shirtY, width, shirtH);
+
+  return {
+    hair:  rgbName(hairRgb.r, hairRgb.g, hairRgb.b),
+    shirt: rgbName(shirtRgb.r, shirtRgb.g, shirtRgb.b)
+  };
+}
+
+/* ---- format label text ---- */
+
+function formatLabel(info) {
+  if (!info) return "";
+  return `hair: ${info.hair}\nshirt: ${info.shirt}`;
+}
+
+/* ---- position a label at the bottom-left of a video element ---- */
+
+function positionLabel(labelEl, videoEl) {
+  const rect = videoEl.getBoundingClientRect();
+  labelEl.style.left   = (rect.left   + 10) + "px";
+  labelEl.style.bottom = (window.innerHeight - rect.bottom + 10) + "px";
+  labelEl.style.top    = "auto";
+}
+
+/* ---- main analysis loop — runs every 3 seconds ---- */
+
+let localInfo = null;
+
+async function runAnalysis() {
+  /* analyse our own local camera only — result is shown on our own label
+     and sent to peer so they can display it on their remote label */
+  const localVideo = document.getElementById("local");
+  localInfo = await analyseVideo(localVideo);
+  labelLocal.innerText = formatLabel(localInfo);
+  positionLabel(labelLocal, remoteVideo);
+
+  /* send to peer via data channel */
+  if (localInfo) {
+    sendDataMsg({ type: "face_info", info: localInfo });
+  }
+}
+
+function updateLabels() {
+  /* reposition local label when video moves */
+  positionLabel(labelLocal, remoteVideo);
+
+  /* reposition remote label when video moves */
+  if (labelRemote.innerText) {
+    const rect = remoteVideo.getBoundingClientRect();
+    labelRemote.style.right  = (window.innerWidth - rect.right + 10) + "px";
+    labelRemote.style.bottom = (window.innerHeight - rect.bottom + 10) + "px";
+    labelRemote.style.left   = "auto";
+    labelRemote.style.top    = "auto";
+  }
+}
+
+/* start analysis loop once connected */
+let analysisInterval = null;
+
+function startAnalysis() {
+  if (analysisInterval) return;
+  analysisInterval = setInterval(runAnalysis, 3000);
+  runAnalysis(); /* run immediately */
+}
+
+/* reposition labels on resize / video transform */
+window.addEventListener("resize", updateLabels);
+
+/* =====================================================================
+   FLASH
+   ===================================================================== */
+
+function flash(text) {
+  overlay.innerText = text;
+  overlay.style.opacity = "1";
+  clearTimeout(overlay._t);
+  overlay._t = setTimeout(() => { overlay.style.opacity = "0"; }, 900);
+}
+
+/* =====================================================================
+   MAKE DRAGGABLE
+   ===================================================================== */
+
+function makeDraggable(el, state) {
+  let dragging = false, moved = false, startX = 0, startY = 0;
+
+  el.addEventListener("mousedown", (e) => {
+    dragging = true; moved = false;
+    startX = e.clientX - state.x;
+    startY = e.clientY - state.y;
+    e.stopPropagation();
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const nx = e.clientX - startX, ny = e.clientY - startY;
+    if (Math.abs(nx - state.x) > 3 || Math.abs(ny - state.y) > 3) moved = true;
+    state.x = nx; state.y = ny;
+    state.update();
+    if (state.onDrag) state.onDrag();
+  });
+
+  window.addEventListener("mouseup", () => { dragging = false; });
+
+  el.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      dragging = true; moved = false;
+      startX = t.clientX - state.x;
+      startY = t.clientY - state.y;
+    }
+    e.stopPropagation();
+  }, { passive: true });
+
+  window.addEventListener("touchmove", (e) => {
+    if (!dragging || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const nx = t.clientX - startX, ny = t.clientY - startY;
+    if (Math.abs(nx - state.x) > 3 || Math.abs(ny - state.y) > 3) moved = true;
+    state.x = nx; state.y = ny;
+    state.update();
+    if (state.onDrag) state.onDrag();
+  }, { passive: true });
+
+  window.addEventListener("touchend", () => { dragging = false; });
+
+  state.wasMoved = () => moved;
+}
+
+/* =====================================================================
+   JOIN
+   ===================================================================== */
+
+async function join() {
+  const code = document.getElementById("code").value.trim();
+  if (!code) return;
+  currentCode = code;
+  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  document.getElementById("local").srcObject = localStream;
+  socket.emit("join", code);
+  document.getElementById("entry").style.display = "none";
+  document.getElementById("status").innerText = "waiting...";
+}
+
+/* =====================================================================
+   PEER
+   ===================================================================== */
+
+socket.on("peer", async ({ initiator }) => {
+
+  let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+  try {
+    const res = await fetch("/ice-config");
+    if (res.ok) { const cfg = await res.json(); iceServers = cfg.iceServers; }
+  } catch (e) { console.warn("ICE config fetch failed:", e); }
+
+  pc = new RTCPeerConnection({ iceServers });
+
+  if (initiator) {
+    dataChannel = pc.createDataChannel("data", { ordered: true });
+    setupDataChannel(dataChannel);
+  }
+
+  pc.ondatachannel = (event) => {
+    receiveChannel = event.channel;
+    setupDataChannel(receiveChannel);
+  };
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  pc.ontrack = (event) => {
+    remoteVideo.srcObject = event.streams[0];
+    document.getElementById("status").innerText = "connected";
+    remoteVideo.classList.remove("hidden");
+    fileBox.classList.remove("hidden");
+    chatBox.classList.remove("hidden");
+    startAnalysis();
+  };
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) socket.emit("signal", { code: currentCode, data: event.candidate });
+  };
+
+  if (initiator) {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit("signal", { code: currentCode, data: offer });
+  }
+});
+
+/* =====================================================================
+   SIGNAL
+   ===================================================================== */
+
+socket.on("signal", async (data) => {
+  if (!pc) return;
+  if (data.type === "offer") {
+    await pc.setRemoteDescription(data);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit("signal", { code: currentCode, data: answer });
+  } else if (data.type === "answer") {
+    await pc.setRemoteDescription(data);
+  } else {
+    try { await pc.addIceCandidate(data); } catch {}
+  }
+});
+
+socket.on("full", () => {
+  document.getElementById("status").innerText = "room full";
+  document.getElementById("entry").style.display = "";
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+});
+
+socket.on("invalid_key", () => {
+  document.getElementById("status").innerText = "invalid key";
+  document.getElementById("entry").style.display = "";
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+});
+
+socket.on("peer_left", () => { location.reload(); });
+
+/* =====================================================================
+   REMOTE TRANSFORM
+   ===================================================================== */
+
+socket.on("transform", ({ target, posX, posY, scale }) => {
+  if (controller === mySocketId) return;
+  if (target === "video") {
+    videoX = posX; videoY = posY; videoScale = scale;
+    updateVideoTransform(); updateLabels();
+    if (videoMinimized) positionVideoLabel();
+  } else if (target === "file") {
+    fileX = posX; fileY = posY; fileScale = scale;
+    updateFileTransform();
+  } else if (target === "chat") {
+    chatX = posX; chatY = posY;
+    updateChatTransform();
+  }
+});
+
+function emitTransform(target, posX, posY, scale) {
+  socket.emit("transform", { code: currentCode, target, posX, posY, scale });
+}
+
+/* =====================================================================
+   DATA CHANNEL
+   ===================================================================== */
+
+function sendDataMsg(obj) {
+  const ch = dataChannel || receiveChannel;
+  if (ch && ch.readyState === "open") ch.send(JSON.stringify(obj));
+}
+
+let incomingChunks = [], incomingName = "download", incomingSize = 0, incomingReceived = 0;
+
+function setupDataChannel(channel) {
+  channel.binaryType = "arraybuffer";
+
+  channel.onmessage = (event) => {
+    if (typeof event.data === "string") {
+      const msg = JSON.parse(event.data);
+
+      /* file meta */
+      if (msg.type === "meta") {
+        incomingName = msg.filename; incomingSize = msg.size || 0;
+        incomingReceived = 0; incomingChunks = [];
+        fileText.innerText = "RECEIVING";
+        showProgress(0, msg.filename);
+      }
+      if (msg.type === "end") {
+        const blob = new Blob(incomingChunks);
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href = url; a.download = incomingName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        fileText.innerText = "DROP FILE"; hideProgress(); flash("RECEIVED");
+      }
+
+      /* remote control */
+      if (msg.type === "remote_claim") handleRemoteClaim(msg);
+
+      /* chat */
+      if (msg.type === "chat") appendChat(msg.text, "them");
+
+      /* peer's face analysis result */
+      if (msg.type === "face_info") {
+        /* peer sends us their own analysis — we show it on labelRemote */
+        const info = msg.info;
+        const rect = remoteVideo.getBoundingClientRect();
+        labelRemote.style.right  = (window.innerWidth - rect.right + 10) + "px";
+        labelRemote.style.bottom = (window.innerHeight - rect.bottom + 10) + "px";
+        labelRemote.style.left   = "auto";
+        labelRemote.style.top    = "auto";
+        labelRemote.style.textAlign = "right";
+        labelRemote.innerText = formatLabel(info);
+      }
+
+      /* global ui state sync */
+      if (msg.type === "ui_state") {
+        if (msg.key === "chat_maximized")  applyChatMaximized(msg.value);
+        if (msg.key === "video_minimized") applyVideoMinimized(msg.value);
+        if (msg.key === "video_enabled")   applyVideoEnabled(msg.value);
+        if (msg.key === "peer_audio")      flash(msg.value ? "PEER AUDIO ON" : "PEER AUDIO OFF");
+      }
+
+    } else {
+      /* binary = file chunk */
+      incomingChunks.push(event.data);
+      incomingReceived += event.data.byteLength;
+      if (incomingSize > 0) showProgress(Math.round((incomingReceived / incomingSize) * 100), incomingName);
+    }
+  };
+}
+
+/* =====================================================================
+   REMOTE CONTROL TOGGLE
+   ===================================================================== */
+
+function toggleRemoteControl() {
+  const msg = { type: "remote_claim", id: mySocketId };
+  handleRemoteClaim(msg);
+  sendDataMsg(msg);
+  if (controller === mySocketId) {
+    /* broadcast current state of all boxes immediately */
+    emitTransform("video", videoX, videoY, videoScale);
+    emitTransform("file",  fileX,  fileY,  fileScale);
+    emitTransform("chat",  chatX,  chatY,  1);
+  }
+}
+
+function handleRemoteClaim(msg) {
+  if (controller === null) {
+    controller = msg.id;
+    if (msg.id === mySocketId) { remoteVideo.classList.add("remote-control");    flash("REMOTE ON"); }
+    else                       { remoteVideo.classList.remove("remote-control"); flash("PEER CONTROLS"); }
+  } else if (controller === msg.id) {
+    controller = null;
+    remoteVideo.classList.remove("remote-control");
+    flash(msg.id === mySocketId ? "REMOTE OFF" : "PEER RELEASED");
+  } else {
+    if (msg.id === mySocketId) flash("PEER HAS CONTROL");
+  }
+}
+
+/* =====================================================================
+   TRANSFORMS
+   ===================================================================== */
+
+function updateVideoTransform() {
+  if (videoMinimized) {
+    remoteVideo.style.transform = `translate(${videoX}px,${videoY}px) scale(${videoScale})`;
+  } else {
+    remoteVideo.style.transform = `translate(-50%,-50%) translate(${videoX}px,${videoY}px) scale(${videoScale})`;
+  }
+}
+function updateFileTransform() {
+  fileBox.style.transform = `translate(${fileX}px,${fileY}px) scale(${fileScale})`;
+}
+function updateChatTransform() {
+  if (chatMaximized) {
+    chatBox.style.transform = `translate(-50%,-50%) translate(${chatX}px,${chatY}px)`;
+  } else {
+    chatBox.style.transform = `translate(${chatX}px,${chatY}px)`;
+  }
+}
+
+/* ---- drag states ---- */
+
+const videoState = {
+  get x() { return videoX; }, set x(v) { videoX = v; },
+  get y() { return videoY; }, set y(v) { videoY = v; },
+  update: updateVideoTransform,
+  onDrag: () => {
+    if (controller === mySocketId) emitTransform("video", videoX, videoY, videoScale);
+    updateLabels();
+    if (videoMinimized) positionVideoLabel();
+  }
+};
+makeDraggable(remoteVideo, videoState);
+
+const fileBoxState = {
+  get x() { return fileX; }, set x(v) { fileX = v; },
+  get y() { return fileY; }, set y(v) { fileY = v; },
+  update: updateFileTransform,
+  onDrag: () => {
+    if (controller === mySocketId) emitTransform("file", fileX, fileY, fileScale);
+  }
+};
+makeDraggable(fileBox, fileBoxState);
+
+const chatState = {
+  get x() { return chatX; }, set x(v) { chatX = v; },
+  get y() { return chatY; }, set y(v) { chatY = v; },
+  update: updateChatTransform,
+  onDrag: () => {
+    if (controller === mySocketId) emitTransform("chat", chatX, chatY, 1);
+  }
+};
+makeDraggable(chatBox, chatState);
+
+/* =====================================================================
+   WHEEL + PINCH
+   ===================================================================== */
+
+window.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const overFile = fileBox.contains(e.target) || e.target === fileBox;
+  const overChat = chatBox.contains(e.target) || e.target === chatBox;
+  if (overFile) {
+    fileScale += e.deltaY * -0.001;
+    fileScale = Math.min(Math.max(1, fileScale), 4);
+    updateFileTransform();
+    if (controller === mySocketId) emitTransform("file", fileX, fileY, fileScale);
+  } else if (overChat) {
+    /* chat box doesn't scale, no-op */
+  } else {
+    videoScale += e.deltaY * -0.001;
+    videoScale = Math.min(Math.max(1, videoScale), 4);
+    updateVideoTransform(); updateLabels();
+    if (controller === mySocketId) emitTransform("video", videoX, videoY, videoScale);
+  }
+}, { passive: false });
+
+let lastPinchDist = null;
+
+window.addEventListener("touchstart", (e) => {
+  if (e.touches.length === 2) {
+    lastPinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  }
+}, { passive: true });
+
+window.addEventListener("touchmove", (e) => {
+  if (e.touches.length !== 2) return;
+  const dist = Math.hypot(
+    e.touches[0].clientX - e.touches[1].clientX,
+    e.touches[0].clientY - e.touches[1].clientY
+  );
+  if (lastPinchDist !== null) {
+    const delta = dist - lastPinchDist;
+    const midX  = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const midY  = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const fr    = fileBox.getBoundingClientRect();
+    const overFile = midX >= fr.left && midX <= fr.right && midY >= fr.top && midY <= fr.bottom;
+    if (overFile) {
+      fileScale += delta * 0.005;
+      fileScale = Math.min(Math.max(1, fileScale), 4);
+      updateFileTransform();
+      if (controller === mySocketId) emitTransform("file", fileX, fileY, fileScale);
+    } else {
+      videoScale += delta * 0.005;
+      videoScale = Math.min(Math.max(1, videoScale), 4);
+      updateVideoTransform(); updateLabels();
+      if (controller === mySocketId) emitTransform("video", videoX, videoY, videoScale);
+    }
+  }
+  lastPinchDist = dist;
+}, { passive: true });
+
+window.addEventListener("touchend", (e) => {
+  if (e.touches.length < 2) lastPinchDist = null;
+}, { passive: true });
+
+/* =====================================================================
+   DOUBLE-TAP / DBLCLICK
+   ===================================================================== */
+
+let lastTap = 0;
+
+remoteVideo.addEventListener("touchend", (e) => {
+  if (videoState.wasMoved && videoState.wasMoved()) return;
+  const now = Date.now();
+  if (now - lastTap < 300) { toggleRemoteControl(); e.preventDefault(); }
+  lastTap = now;
+}, { passive: false });
+
+remoteVideo.addEventListener("dblclick", () => {
+  if (videoState.wasMoved && videoState.wasMoved()) return;
+  toggleRemoteControl();
+});
+
+/* =====================================================================
+   FILE UI
+   ===================================================================== */
+
+const fileText        = document.getElementById("fileText");
+const fileProgress    = document.getElementById("fileProgress");
+const fileProgressBar = document.getElementById("fileProgressBar");
+const fileLabel       = document.getElementById("fileLabel");
+const filePicker      = document.getElementById("filePicker");
+
+function showProgress(pct, label) {
+  fileProgress.style.display = "block";
+  fileProgressBar.style.width = pct + "%";
+  fileLabel.innerText = label;
+}
+function hideProgress() {
+  fileProgress.style.display = "none";
+  fileProgressBar.style.width = "0%";
+  fileLabel.innerText = "";
+}
+
+const CHUNK_SIZE = 16384, BUFFER_THRESHOLD = 262144, MAX_FILE_SIZE = 500 * 1024 * 1024;
+
+async function sendFile(buffer, filename) {
+  const channel = dataChannel || receiveChannel;
+  if (!channel || channel.readyState !== "open") { flash("NOT CONNECTED"); return; }
+  if (buffer.byteLength > MAX_FILE_SIZE) { flash("FILE TOO LARGE"); return; }
+  const total = buffer.byteLength;
+  let offset = 0;
+  fileText.innerText = "SENDING";
+  showProgress(0, filename);
+  channel.send(JSON.stringify({ type: "meta", filename, size: total }));
+  function sendNext() {
+    while (offset < total) {
+      if (channel.bufferedAmount > BUFFER_THRESHOLD) {
+        channel.bufferedAmountLowThreshold = BUFFER_THRESHOLD / 2;
+        channel.onbufferedamountlow = () => { channel.onbufferedamountlow = null; sendNext(); };
+        return;
+      }
+      const end = Math.min(offset + CHUNK_SIZE, total);
+      channel.send(buffer.slice(offset, end));
+      offset = end;
+      showProgress(Math.round((offset / total) * 100), filename);
+    }
+    channel.send(JSON.stringify({ type: "end" }));
+    fileText.innerText = "DROP FILE"; hideProgress(); flash("SENT");
+  }
+  sendNext();
+}
+
+fileBox.addEventListener("dragover",  (e) => { e.preventDefault(); fileBox.classList.add("dragging"); });
+fileBox.addEventListener("dragleave", ()  => { fileBox.classList.remove("dragging"); });
+fileBox.addEventListener("drop", async (e) => {
+  e.preventDefault(); fileBox.classList.remove("dragging");
+  const file = e.dataTransfer.files[0]; if (!file) return;
+  sendFile(await file.arrayBuffer(), file.name);
+});
+fileBox.addEventListener("click", () => {
+  if (fileBoxState.wasMoved && fileBoxState.wasMoved()) return;
+  filePicker.click();
+});
+filePicker.addEventListener("change", async () => {
+  const file = filePicker.files[0]; if (!file) return;
+  filePicker.value = "";
+  sendFile(await file.arrayBuffer(), file.name);
+});
+
+/* =====================================================================
+   CHAT
+   ===================================================================== */
+
+function appendChat(text, who) {
+  const div = document.createElement("div");
+  div.className = "chat-msg " + who;
+  div.innerText = text;
+  chatLog.appendChild(div);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function sendChat() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  chatInput.value = "";
+  appendChat(text, "me");
+  sendDataMsg({ type: "chat", text });
+}
+
+chatSend.addEventListener("click", sendChat);
+chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendChat(); } });
+chatInput.addEventListener("mousedown", (e) => e.stopPropagation());
+chatInput.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
+
+/* =====================================================================
+   CHAT MAXIMIZE TOGGLE (Cmd+C / Ctrl+C)
+   ===================================================================== */
+
+function applyChatMaximized(val) {
+  chatMaximized = val;
+  chatBox.classList.toggle("maximized", chatMaximized);
+  chatX = 0; chatY = 0;
+  updateChatTransform();
+  flash(chatMaximized ? "CHAT +" : "CHAT —");
+}
+
+function toggleChatMaximized() {
+  applyChatMaximized(!chatMaximized);
+  sendDataMsg({ type: "ui_state", key: "chat_maximized", value: chatMaximized });
+}
+
+/* =====================================================================
+   VIDEO MINIMIZE TOGGLE (Cmd+V / Ctrl+V)
+   ===================================================================== */
+
+const videoLabel = document.getElementById("videoLabel");
+
+function applyVideoMinimized(val) {
+  videoMinimized = val;
+  remoteVideo.classList.toggle("minimized", videoMinimized);
+  videoX = 0; videoY = 0; videoScale = 1;
+  if (videoMinimized) {
+    videoLabel.style.display = "block";
+    positionVideoLabel();
+    flash("VIDEO —");
+  } else {
+    videoLabel.style.display = "none";
+    flash("VIDEO +");
+  }
+  updateVideoTransform();
+  updateLabels();
+}
+
+function toggleVideoMinimized() {
+  applyVideoMinimized(!videoMinimized);
+  sendDataMsg({ type: "ui_state", key: "video_minimized", value: videoMinimized });
+}
+
+function positionVideoLabel() {
+  const rect = remoteVideo.getBoundingClientRect();
+  videoLabel.style.left   = (rect.left + 10) + "px";
+  videoLabel.style.top    = (rect.top  + 10) + "px";
+  videoLabel.style.bottom = "auto";
+}
+
+/* reposition video label on drag/resize */
+const _origUpdateVideo = updateVideoTransform;
+
+window.addEventListener("resize", () => {
+  if (videoMinimized) positionVideoLabel();
+});
+
+document.addEventListener("keydown", (e) => {
+  const typing = document.activeElement === chatInput;
+
+  /* Cmd+V / Ctrl+V — minimize/restore video */
+  if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+    if (typing) return;
+    e.preventDefault();
+    toggleVideoMinimized();
+  }
+
+  /* Cmd+C / Ctrl+C — maximize/restore chat */
+  if ((e.metaKey || e.ctrlKey) && e.key === "c") {
+    if (typing) return;
+    e.preventDefault();
+    toggleChatMaximized();
+  }
+
+  /* Spacebar — mute/unmute local audio */
+  if (e.key === " ") {
+    if (typing) return;
+    e.preventDefault();
+    toggleAudio();
+  }
+
+  /* Cmd+D / Ctrl+D — enable/disable local video */
+  if ((e.metaKey || e.ctrlKey) && e.key === "d") {
+    if (typing) return;
+    e.preventDefault();
+    toggleVideo();
+  }
+});
+
+function toggleAudio() {
+  if (!localStream) return;
+  const audioTrack = localStream.getAudioTracks()[0];
+  if (!audioTrack) return;
+  audioTrack.enabled = !audioTrack.enabled;
+  flash(audioTrack.enabled ? "AUDIO ON" : "AUDIO OFF");
+  sendDataMsg({ type: "ui_state", key: "peer_audio", value: audioTrack.enabled });
+}
+
+function applyVideoEnabled(val) {
+  if (!localStream) return;
+  const videoTrack = localStream.getVideoTracks()[0];
+  if (!videoTrack) return;
+  videoTrack.enabled = val;
+  flash(val ? "CAM ON" : "CAM OFF");
+}
+
+function toggleVideo() {
+  if (!localStream) return;
+  const videoTrack = localStream.getVideoTracks()[0];
+  if (!videoTrack) return;
+  const next = !videoTrack.enabled;
+  applyVideoEnabled(next);
+  sendDataMsg({ type: "ui_state", key: "video_enabled", value: next });
+}
+
+/* =====================================================================
+   ENTER KEY (room code)
+   ===================================================================== */
+
+document.getElementById("code").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") join();
+});
+
+</script>
+
+</body>
+</html>
