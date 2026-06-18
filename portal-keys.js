@@ -34,9 +34,13 @@ const crypto = require("crypto");
 /* ------------------------------------------------------------------ */
 
 const RPC_URL       = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
-const PROGRAM_ID    = new PublicKey(process.env.PROGRAM_ID);
-const TREASURY      = new PublicKey(process.env.TREASURY_PUBKEY);
+const PROGRAM_ID    = process.env.PROGRAM_ID      ? new PublicKey(process.env.PROGRAM_ID)      : null;
+const TREASURY      = process.env.TREASURY_PUBKEY ? new PublicKey(process.env.TREASURY_PUBKEY) : null;
 const KEY_PRICE_LAMPORTS = 100_000_000; // must match lib.rs constant
+
+if (!PROGRAM_ID || !TREASURY) {
+  console.warn("portal-keys: PROGRAM_ID or TREASURY_PUBKEY not set — purchase/validate routes will be no-ops until contract is deployed");
+}
 
 const connection = new Connection(RPC_URL, "confirmed");
 
@@ -156,6 +160,9 @@ async function validateKey(code) {
   /* Check admin keys first — instant, no RPC call */
   if (adminKeys.has(code)) return true;
 
+  /* Contract not yet deployed — allow all codes through */
+  if (!PROGRAM_ID) return true;
+
   try {
     /* Fetch all KeyRecord accounts and look for a matching key */
     const accounts = await connection.getProgramAccounts(PROGRAM_ID, {
@@ -244,6 +251,9 @@ function init(app) {
      Returns: { transaction: "<base64>", sessionId: "<uuid>" }
   */
   app.post("/purchase", async (req, res) => {
+    if (!PROGRAM_ID || !TREASURY) {
+      return res.status(503).json({ error: "contract not yet deployed" });
+    }
     try {
       const buyer = new PublicKey(req.body.buyer);
       const [keyRecordPda] = await findKeyRecord(buyer);
