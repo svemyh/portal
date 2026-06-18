@@ -334,6 +334,9 @@ button {
 /* hidden canvas for face analysis */
 #analysisCanvas { display: none; }
 
+/* boxes hidden until connected */
+#fileBox, #chatBox, #remote { display: none; }
+
 </style>
 </head>
 
@@ -707,6 +710,9 @@ socket.on("peer", async ({ initiator }) => {
   pc.ontrack = (event) => {
     remoteVideo.srcObject = event.streams[0];
     document.getElementById("status").innerText = "connected";
+    remoteVideo.style.display = "";
+    fileBox.style.display = "";
+    chatBox.style.display = "";
     startAnalysis();
   };
 
