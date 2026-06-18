@@ -338,6 +338,49 @@ button {
   display: none;
 }
 
+/* ---- keyboard shortcut legend ---- */
+
+#helpBox {
+  position: fixed;
+  top: 25px;
+  left: 25px;
+  z-index: 3000;
+  font-size: 10px;
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+
+#helpInner {
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.7);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 180px;
+}
+
+.help-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.help-key {
+  opacity: 0.4;
+  white-space: nowrap;
+  min-width: 28px;
+}
+
+.help-desc {
+  opacity: 0.7;
+}
+
+.help-divider {
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin: 2px 0;
+}
+
 /* boxes hidden until connected */
 .hidden { visibility: hidden !important; }
 
@@ -366,6 +409,19 @@ button {
 <!-- face labels -->
 <div id="labelLocal"  class="face-label"></div>
 <div id="labelRemote" class="face-label"></div>
+
+<!-- KEYBOARD SHORTCUT LEGEND -->
+<div id="helpBox">
+  <div id="helpInner">
+    <div class="help-row"><span class="help-key">⌘</span><span class="help-desc">PORTAL v0.0.9</span></div>
+    <div class="help-divider"></div>
+    <div class="help-row"><span class="help-key">SPC</span><span class="help-desc">MUTE / UNMUTE MIC</span></div>
+    <div class="help-row"><span class="help-key">⌘D</span><span class="help-desc">TOGGLE CAMERA</span></div>
+    <div class="help-row"><span class="help-key">⌘V</span><span class="help-desc">MINIMISE VIDEO</span></div>
+    <div class="help-row"><span class="help-key">⌘C</span><span class="help-desc">MAXIMISE CHAT</span></div>
+    <div class="help-row"><span class="help-key">2×</span><span class="help-desc">REMOTE CONTROL</span></div>
+  </div>
+</div>
 
 <!-- FILE BOX -->
 <div id="fileBox" class="box hidden">
@@ -450,6 +506,19 @@ function positionFaceCanvas() {
 
 /* ---- draw peer's face box on the remote video canvas ---- */
 
+function canvasStatus(msg) {
+  const rect = remoteVideo.getBoundingClientRect();
+  const dw = Math.round(rect.width);
+  const dh = Math.round(rect.height);
+  faceCanvas.width = dw; faceCanvas.height = dh;
+  faceCtx.clearRect(0, 0, dw, dh);
+  faceCtx.save();
+  faceCtx.font = "10px 'Courier New', monospace";
+  faceCtx.fillStyle = "rgba(255,255,255,0.2)";
+  faceCtx.fillText(msg, 10, dh - 12);
+  faceCtx.restore();
+}
+
 function drawPeerFaceBox(normBox) {
   const rect = remoteVideo.getBoundingClientRect();
   const dw = Math.round(rect.width);
@@ -458,7 +527,8 @@ function drawPeerFaceBox(normBox) {
   faceCanvas.height = dh;
   faceCtx.clearRect(0, 0, dw, dh);
 
-  if (!normBox || !remoteVideo.videoWidth) return;
+  if (!normBox) { canvasStatus("E:NO_FACE_DATA"); return; }
+  if (!remoteVideo.videoWidth) { canvasStatus("E:VIDEO_NOT_READY"); return; }
 
   /* compute object-fit: cover mapping so box aligns with displayed content */
   const vw = remoteVideo.videoWidth;
@@ -508,6 +578,9 @@ async function detectLocalFace() {
   const localVideo = document.getElementById("local");
   if (!localVideo.videoWidth || !localVideo.videoHeight) return;
 
+  const ctrl    = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 8000);
+
   try {
     const canvas = document.createElement("canvas");
     canvas.width  = localVideo.videoWidth;
@@ -518,22 +591,28 @@ async function detectLocalFace() {
     const res  = await fetch("/face/detect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_b64 })
+      body: JSON.stringify({ image_b64 }),
+      signal: ctrl.signal
     });
+    clearTimeout(timeout);
     const data = await res.json();
 
     if (data.faces && data.faces.length > 0) {
       localInfo = { detected: true };
-      const box = data.faces[0];          /* normalized 0-1 bbox from server */
+      const box = data.faces[0];
       sendDataMsg({ type: "face_box", box });
       labelLocal.innerText = `${currentCode || "—"}\nUSER ${myUserNumber || "—"}`;
-      positionLabel(labelLocal, remoteVideo);
     } else {
       localInfo = null;
+      labelLocal.innerText = `${currentCode || "—"}\nUSER ${myUserNumber || "—"}\nE:NO_FACE`;
     }
   } catch (e) {
+    clearTimeout(timeout);
+    const code = e.name === "AbortError" ? "E:SVC_TIMEOUT" : "E:SVC_OFFLINE";
+    labelLocal.innerText = `${currentCode || "—"}\nUSER ${myUserNumber || "—"}\n${code}`;
     console.warn("face detect:", e);
   }
+  positionLabel(labelLocal, remoteVideo);
 }
 
 /* ---- position a label at the bottom-left of a video element ---- */
@@ -572,8 +651,24 @@ function startAnalysis() {
   if (analysisInterval) return;
   faceCanvas.style.display = "block";
   positionFaceCanvas();
+
+  /* set corner labels immediately so key/user shows before detection completes */
+  const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
+  labelLocal.innerText  = `${currentCode || "—"}\nUSER ${myUserNumber || "—"}\nE:DETECTING`;
+  positionLabel(labelLocal, remoteVideo);
+  const rect = remoteVideo.getBoundingClientRect();
+  labelRemote.style.right  = (window.innerWidth - rect.right + 10) + "px";
+  labelRemote.style.bottom = (window.innerHeight - rect.bottom + 10) + "px";
+  labelRemote.style.left   = "auto";
+  labelRemote.style.top    = "auto";
+  labelRemote.style.textAlign = "right";
+  labelRemote.innerText = `${currentCode || "—"}\nUSER ${peerNum}\nE:AWAITING`;
+
+  canvasStatus("E:AWAITING_PEER");
+
+  /* slight delay so data channel is open before first send */
   analysisInterval = setInterval(runAnalysis, 5000);
-  runAnalysis();
+  setTimeout(runAnalysis, 1500);
 }
 
 window.addEventListener("resize", updateLabels);
@@ -1237,6 +1332,7 @@ function toggleVideo() {
   const videoTrack = localStream.getVideoTracks()[0];
   if (!videoTrack) return;
   const next = !videoTrack.enabled;
+  applyVideoEnabled(next);
   sendDataMsg({ type: "ui_state", key: "video_enabled", value: next });
 }
 
