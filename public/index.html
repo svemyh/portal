@@ -764,13 +764,13 @@ async function join() {
     canvas.getContext("2d").drawImage(bitmap, 0, 0);
     const image_b64 = canvas.toDataURL("image/jpeg", 0.8);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const verifyCtrl = new AbortController();
+    const timeout = setTimeout(() => verifyCtrl.abort(), 6000);
     const res = await fetch("/face/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ portal_key: code, image_b64 }),
-      signal: controller.signal
+      signal: verifyCtrl.signal
     });
     clearTimeout(timeout);
     const data = await res.json();
@@ -826,7 +826,7 @@ socket.on("peer", async ({ initiator }) => {
 
     if (socket._faceWarning) {
       document.getElementById("status").innerText = "⚠ face mismatch — identity unverified";
-      socket.to(currentCode).emit("face_warning");
+      socket.emit("face_warning", currentCode);
     } else {
       document.getElementById("status").innerText = "connected";
     }
@@ -954,7 +954,7 @@ function setupDataChannel(channel) {
       if (msg.type === "ui_state") {
         if (msg.key === "chat_maximized")  applyChatMaximized(msg.value);
         if (msg.key === "video_minimized") applyVideoMinimized(msg.value);
-        if (msg.key === "video_enabled")   applyVideoEnabled(msg.value);
+        if (msg.key === "video_enabled")   flash(msg.value ? "PEER CAM ON" : "PEER CAM OFF");
       }
 
     } else {
@@ -1054,7 +1054,7 @@ makeDraggable(chatBox, chatState);
 
 let helpX = 0, helpY = 0;
 function updateHelpTransform() {
-  helpBox.style.transform = `translate(${helpX}px,${helpY}px)`;
+  helpBoxEl.style.transform = `translate(${helpX}px,${helpY}px)`;
 }
 const helpBoxEl  = document.getElementById("helpBox");
 const helpState  = {
@@ -1291,8 +1291,6 @@ function positionVideoLabel() {
 }
 
 /* reposition video label on drag/resize */
-const _origUpdateVideo = updateVideoTransform;
-
 window.addEventListener("resize", () => {
   if (videoMinimized) positionVideoLabel();
 });
