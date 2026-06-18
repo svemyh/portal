@@ -38,10 +38,6 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     healthCheckPath: /health
-    disk:
-      name: face-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: FACE_DATA_FILE
-        value: /data/encodings.json
+        value: face_data/encodings.json
