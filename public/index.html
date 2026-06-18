@@ -277,7 +277,7 @@ button {
 
 <body>
 
-<div id="title">portal<br><span>v0.0.6</span></div>
+<div id="title">portal<br><span>v0.0.7</span></div>
 <div id="status">idle</div>
 
 <div id="entry">
@@ -322,7 +322,7 @@ button {
 <script>
 
 /* =====================================================================
-   PORTAL — v0.0.6
+   PORTAL — v0.0.7
    ===================================================================== */
 
 const socket = io();
@@ -362,7 +362,6 @@ let faceApiReady = false;
 async function loadFaceApi() {
   try {
     await faceapi.nets.tinyFaceDetector.loadFromUri("/models");
-    await faceapi.nets.ageGenderNet.loadFromUri("/models");
     faceApiReady = true;
     console.log("face-api ready");
   } catch (e) {
@@ -455,14 +454,10 @@ async function analyseVideo(video) {
   analysisCtx.drawImage(video, 0, 0, vw, vh);
 
   const detection = await faceapi
-    .detectSingleFace(analysisCanvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }))
-    .withAgeAndGender();
-
+    .detectSingleFace(analysisCanvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }));
   if (!detection) return null;
 
-  const { x, y, width, height } = detection.detection.box;
-  const gender = detection.gender;          /* "male" / "female" */
-  const conf   = detection.genderProbability;
+  const { x, y, width, height } = detection.box;
 
   /* hair: strip above face, same width, half-face height tall */
   const hairY  = Math.max(0, y - height * 0.55);
@@ -475,8 +470,6 @@ async function analyseVideo(video) {
   const shirtRgb = sampleRegion(video, x, shirtY, width, shirtH);
 
   return {
-    gender,
-    conf: Math.round(conf * 100),
     hair:  rgbName(hairRgb.r, hairRgb.g, hairRgb.b),
     shirt: rgbName(shirtRgb.r, shirtRgb.g, shirtRgb.b)
   };
@@ -486,7 +479,7 @@ async function analyseVideo(video) {
 
 function formatLabel(info) {
   if (!info) return "";
-  return `${info.gender} (${info.conf}%)\nhair: ${info.hair}\nshirt: ${info.shirt}`;
+  return `hair: ${info.hair}\nshirt: ${info.shirt}`;
 }
 
 /* ---- position a label at the bottom-left of a video element ---- */
@@ -500,40 +493,33 @@ function positionLabel(labelEl, videoEl) {
 
 /* ---- main analysis loop — runs every 3 seconds ---- */
 
-let localInfo  = null;
-let remoteInfo = null;
+let localInfo = null;
 
 async function runAnalysis() {
-  /* analyse local camera */
+  /* analyse our own local camera only — result is shown on our own label
+     and sent to peer so they can display it on their remote label */
   const localVideo = document.getElementById("local");
   localInfo = await analyseVideo(localVideo);
   labelLocal.innerText = formatLabel(localInfo);
-  positionLabel(labelLocal, remoteVideo); /* show on remote video corner, labelled as "you" */
+  positionLabel(labelLocal, remoteVideo);
 
-  /* send our analysis to peer via data channel */
+  /* send to peer via data channel */
   if (localInfo) {
     sendDataMsg({ type: "face_info", info: localInfo });
   }
-
-  /* analyse remote video independently */
-  remoteInfo = await analyseVideo(remoteVideo);
-  /* remote label positioned on same video, opposite corner or just update text */
-  updateLabels();
 }
 
 function updateLabels() {
-  /* local person's analysis → shown bottom-left of video */
+  /* reposition local label when video moves */
   positionLabel(labelLocal, remoteVideo);
 
-  /* remote person's analysis → shown bottom-right of video */
-  if (remoteInfo) {
+  /* reposition remote label when video moves */
+  if (labelRemote.innerText) {
     const rect = remoteVideo.getBoundingClientRect();
     labelRemote.style.right  = (window.innerWidth - rect.right + 10) + "px";
     labelRemote.style.bottom = (window.innerHeight - rect.bottom + 10) + "px";
     labelRemote.style.left   = "auto";
     labelRemote.style.top    = "auto";
-    labelRemote.style.textAlign = "right";
-    labelRemote.innerText = formatLabel(remoteInfo);
   }
 }
 
@@ -698,15 +684,22 @@ socket.on("peer_left", () => { location.reload(); });
    REMOTE TRANSFORM
    ===================================================================== */
 
-socket.on("transform", ({ posX, posY, scale }) => {
+socket.on("transform", ({ target, posX, posY, scale }) => {
   if (controller === mySocketId) return;
-  videoX = posX; videoY = posY; videoScale = scale;
-  updateVideoTransform();
-  updateLabels();
+  if (target === "video") {
+    videoX = posX; videoY = posY; videoScale = scale;
+    updateVideoTransform(); updateLabels();
+  } else if (target === "file") {
+    fileX = posX; fileY = posY; fileScale = scale;
+    updateFileTransform();
+  } else if (target === "chat") {
+    chatX = posX; chatY = posY;
+    updateChatTransform();
+  }
 });
 
-function emitTransform() {
-  socket.emit("transform", { code: currentCode, posX: videoX, posY: videoY, scale: videoScale });
+function emitTransform(target, posX, posY, scale) {
+  socket.emit("transform", { code: currentCode, target, posX, posY, scale });
 }
 
 /* =====================================================================
@@ -780,7 +773,12 @@ function toggleRemoteControl() {
   const msg = { type: "remote_claim", id: mySocketId };
   handleRemoteClaim(msg);
   sendDataMsg(msg);
-  if (controller === mySocketId) emitTransform();
+  if (controller === mySocketId) {
+    /* broadcast current state of all boxes immediately */
+    emitTransform("video", videoX, videoY, videoScale);
+    emitTransform("file",  fileX,  fileY,  fileScale);
+    emitTransform("chat",  chatX,  chatY,  1);
+  }
 }
 
 function handleRemoteClaim(msg) {
@@ -817,21 +815,30 @@ const videoState = {
   get x() { return videoX; }, set x(v) { videoX = v; },
   get y() { return videoY; }, set y(v) { videoY = v; },
   update: updateVideoTransform,
-  onDrag: () => { if (controller === mySocketId) emitTransform(); updateLabels(); }
+  onDrag: () => {
+    if (controller === mySocketId) emitTransform("video", videoX, videoY, videoScale);
+    updateLabels();
+  }
 };
 makeDraggable(remoteVideo, videoState);
 
 const fileBoxState = {
   get x() { return fileX; }, set x(v) { fileX = v; },
   get y() { return fileY; }, set y(v) { fileY = v; },
-  update: updateFileTransform
+  update: updateFileTransform,
+  onDrag: () => {
+    if (controller === mySocketId) emitTransform("file", fileX, fileY, fileScale);
+  }
 };
 makeDraggable(fileBox, fileBoxState);
 
 const chatState = {
   get x() { return chatX; }, set x(v) { chatX = v; },
   get y() { return chatY; }, set y(v) { chatY = v; },
-  update: updateChatTransform
+  update: updateChatTransform,
+  onDrag: () => {
+    if (controller === mySocketId) emitTransform("chat", chatX, chatY, 1);
+  }
 };
 makeDraggable(chatHandle, chatState);
 
@@ -847,11 +854,14 @@ window.addEventListener("wheel", (e) => {
     fileScale += e.deltaY * -0.001;
     fileScale = Math.min(Math.max(1, fileScale), 4);
     updateFileTransform();
-  } else if (!overChat) {
+    if (controller === mySocketId) emitTransform("file", fileX, fileY, fileScale);
+  } else if (overChat) {
+    /* chat box doesn't scale, no-op */
+  } else {
     videoScale += e.deltaY * -0.001;
     videoScale = Math.min(Math.max(1, videoScale), 4);
     updateVideoTransform(); updateLabels();
-    if (controller === mySocketId) emitTransform();
+    if (controller === mySocketId) emitTransform("video", videoX, videoY, videoScale);
   }
 }, { passive: false });
 
@@ -882,11 +892,12 @@ window.addEventListener("touchmove", (e) => {
       fileScale += delta * 0.005;
       fileScale = Math.min(Math.max(1, fileScale), 4);
       updateFileTransform();
+      if (controller === mySocketId) emitTransform("file", fileX, fileY, fileScale);
     } else {
       videoScale += delta * 0.005;
       videoScale = Math.min(Math.max(1, videoScale), 4);
       updateVideoTransform(); updateLabels();
-      if (controller === mySocketId) emitTransform();
+      if (controller === mySocketId) emitTransform("video", videoX, videoY, videoScale);
     }
   }
   lastPinchDist = dist;

@@ -85,8 +85,8 @@ io.on("connection", (socket) => {
 
   /* ---------- REMOTE TRANSFORM ---------- */
 
-  socket.on("transform", ({ code, posX, posY, scale }) => {
-    socket.to(code).emit("transform", { posX, posY, scale });
+  socket.on("transform", ({ code, target, posX, posY, scale }) => {
+    socket.to(code).emit("transform", { target, posX, posY, scale });
   });
 
   /* ---------- DISCONNECT ---------- */
