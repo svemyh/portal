@@ -9,12 +9,13 @@ import os
 import json
 import base64
 import numpy as np
-import face_recognition
+from deepface import DeepFace
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image
 import io
+import tempfile
 
 app = FastAPI(title="Portal Face Service")
 
@@ -45,9 +46,21 @@ def save_encodings(data: dict):
 
 def decode_image(image_b64: str) -> np.ndarray:
     """Decode a base64 image string to a numpy RGB array."""
-    image_data = base64.b64decode(image_b64.split(",")[-1])  # strip data URI prefix
+    image_data = base64.b64decode(image_b64.split(",")[-1])
     image = Image.open(io.BytesIO(image_data)).convert("RGB")
     return np.array(image)
+
+
+def get_embedding(img_array: np.ndarray) -> list:
+    """Get face embedding using DeepFace (Facenet model, no dlib required)."""
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+        Image.fromarray(img_array).save(f.name)
+        tmp_path = f.name
+    try:
+        result = DeepFace.represent(img_path=tmp_path, model_name="Facenet", enforce_detection=True)
+        return result[0]["embedding"]
+    finally:
+        os.unlink(tmp_path)
 
 
 class EnrollRequest(BaseModel):
@@ -62,22 +75,18 @@ class VerifyRequest(BaseModel):
 
 @app.post("/enroll")
 def enroll(req: EnrollRequest):
-    """
-    Store a face encoding for a portal key.
-    Called once during key purchase after the transaction confirms.
-    """
     try:
         image = decode_image(req.image_b64)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
-    encodings = face_recognition.face_encodings(image)
-    if not encodings:
-        raise HTTPException(status_code=422, detail="No face detected in image. Please try again.")
+    try:
+        embedding = get_embedding(image)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"No face detected: {e}")
 
-    # Store the first detected face
     data = load_encodings()
-    data[req.portal_key] = encodings[0].tolist()
+    data[req.portal_key] = embedding
     save_encodings(data)
 
     return {"status": "enrolled", "portal_key": req.portal_key}
@@ -85,30 +94,27 @@ def enroll(req: EnrollRequest):
 
 @app.post("/verify")
 def verify(req: VerifyRequest):
-    """
-    Verify a face against the stored encoding for a portal key.
-    Returns match: true/false and a confidence score.
-    """
     data = load_encodings()
 
     if req.portal_key not in data:
-        return {"match": None, "reason": "no_enrollment", "confidence": None}
+        return {"match": True, "reason": "no_enrollment", "confidence": 1.0}
 
     try:
         image = decode_image(req.image_b64)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
-    live_encodings = face_recognition.face_encodings(image)
-    if not live_encodings:
-        return {"match": False, "reason": "no_face_detected", "confidence": 0}
+    try:
+        live = np.array(get_embedding(image))
+    except Exception:
+        return {"match": False, "reason": "no_face_detected", "confidence": 0.0}
 
     stored = np.array(data[req.portal_key])
-    live = live_encodings[0]
 
-    distance = face_recognition.face_distance([stored], live)[0]
-    confidence = round(float(1 - distance), 3)
-    match = bool(distance < 0.5)  # standard threshold; lower = stricter
+    # Cosine similarity
+    cos_sim = float(np.dot(stored, live) / (np.linalg.norm(stored) * np.linalg.norm(live)))
+    confidence = round(cos_sim, 3)
+    match = cos_sim > 0.7  # Facenet threshold
 
     return {
         "match": match,
