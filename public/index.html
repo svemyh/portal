@@ -87,11 +87,33 @@ button {
   z-index: 1000;
   touch-action: none;
   cursor: grab;
+  transition: width 0.2s ease, height 0.2s ease, max-width 0.2s ease, max-height 0.2s ease;
+}
+
+#remote.minimized {
+  width: 240px;
+  height: 240px;
+  max-width: 240px;
+  max-height: 240px;
+  top: 0;
+  left: 0;
+  transform: translate(0px,0px) scale(1);
 }
 
 #remote.remote-control {
   border-color: rgba(255,255,255,0.5);
   cursor: crosshair;
+}
+
+/* label shown inside video box when minimized */
+#videoLabel {
+  position: fixed;
+  z-index: 1050;
+  font-size: 10px;
+  letter-spacing: 2px;
+  opacity: 0.4;
+  pointer-events: none;
+  display: none;
 }
 
 #local {
@@ -148,13 +170,19 @@ button {
 #fileBox {
   right: 25px;
   bottom: 25px;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
   transform: translate(0px,0px) scale(1);
 }
 
 #fileBox.dragging { border-color: white; }
+
+#fileBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
 
 #fileProgress {
   width: 80%;
@@ -185,7 +213,7 @@ button {
   bottom: 25px;
   transform: translate(0px,0px) scale(1);
   flex-direction: column;
-  cursor: default;
+  cursor: grab;
 }
 
 #chatBox .box-header {
@@ -236,6 +264,7 @@ button {
   letter-spacing: 0.5px;
   outline: none;
   cursor: text;
+  user-select: text;
 }
 
 #chatInput::placeholder { opacity: 0.3; }
@@ -250,6 +279,7 @@ button {
   letter-spacing: 1px;
   cursor: pointer;
   margin-left: 0;
+  user-select: none;
 }
 
 #chatSend:hover { background: rgba(255,255,255,0.05); }
@@ -287,6 +317,7 @@ button {
 
 <video id="local"  autoplay muted    playsinline></video>
 <video id="remote" autoplay playsinline></video>
+<div id="videoLabel">VIDEO</div>
 
 <!-- off-screen canvas for pixel sampling -->
 <canvas id="analysisCanvas"></canvas>
@@ -299,9 +330,12 @@ button {
 
 <!-- FILE BOX -->
 <div id="fileBox" class="box">
-  <span id="fileText">DROP FILE</span>
-  <div id="fileProgress"><div id="fileProgressBar"></div></div>
-  <div id="fileLabel"></div>
+  <div class="box-header">FILES</div>
+  <div id="fileBody">
+    <span id="fileText">DROP FILE</span>
+    <div id="fileProgress"><div id="fileProgressBar"></div></div>
+    <div id="fileLabel"></div>
+  </div>
 </div>
 
 <!-- CHAT BOX -->
@@ -330,6 +364,7 @@ const socket = io();
 let pc, dataChannel, receiveChannel, localStream, currentCode;
 
 let videoX = 0, videoY = 0, videoScale = 1;
+let videoMinimized = false;
 let fileX  = 0, fileY  = 0, fileScale  = 1;
 let chatX  = 0, chatY  = 0;
 
@@ -689,6 +724,7 @@ socket.on("transform", ({ target, posX, posY, scale }) => {
   if (target === "video") {
     videoX = posX; videoY = posY; videoScale = scale;
     updateVideoTransform(); updateLabels();
+    if (videoMinimized) positionVideoLabel();
   } else if (target === "file") {
     fileX = posX; fileY = posY; fileScale = scale;
     updateFileTransform();
@@ -800,7 +836,11 @@ function handleRemoteClaim(msg) {
    ===================================================================== */
 
 function updateVideoTransform() {
-  remoteVideo.style.transform = `translate(-50%,-50%) translate(${videoX}px,${videoY}px) scale(${videoScale})`;
+  if (videoMinimized) {
+    remoteVideo.style.transform = `translate(${videoX}px,${videoY}px) scale(${videoScale})`;
+  } else {
+    remoteVideo.style.transform = `translate(-50%,-50%) translate(${videoX}px,${videoY}px) scale(${videoScale})`;
+  }
 }
 function updateFileTransform() {
   fileBox.style.transform = `translate(${fileX}px,${fileY}px) scale(${fileScale})`;
@@ -818,6 +858,7 @@ const videoState = {
   onDrag: () => {
     if (controller === mySocketId) emitTransform("video", videoX, videoY, videoScale);
     updateLabels();
+    if (videoMinimized) positionVideoLabel();
   }
 };
 makeDraggable(remoteVideo, videoState);
@@ -840,7 +881,7 @@ const chatState = {
     if (controller === mySocketId) emitTransform("chat", chatX, chatY, 1);
   }
 };
-makeDraggable(chatHandle, chatState);
+makeDraggable(chatBox, chatState);
 
 /* =====================================================================
    WHEEL + PINCH
@@ -1016,6 +1057,57 @@ chatSend.addEventListener("click", sendChat);
 chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendChat(); } });
 chatInput.addEventListener("mousedown", (e) => e.stopPropagation());
 chatInput.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
+
+/* =====================================================================
+   VIDEO MINIMIZE TOGGLE (Cmd+V / Ctrl+V)
+   ===================================================================== */
+
+const videoLabel = document.getElementById("videoLabel");
+
+function toggleVideoMinimized() {
+  videoMinimized = !videoMinimized;
+  remoteVideo.classList.toggle("minimized", videoMinimized);
+
+  if (videoMinimized) {
+    /* reset position to top-left origin on minimize */
+    videoX = 0; videoY = 0; videoScale = 1;
+    videoLabel.style.display = "block";
+    /* position label inside top-left of box */
+    positionVideoLabel();
+    flash("VIDEO —");
+  } else {
+    /* restore to center */
+    videoX = 0; videoY = 0; videoScale = 1;
+    videoLabel.style.display = "none";
+    flash("VIDEO +");
+  }
+
+  updateVideoTransform();
+  updateLabels();
+}
+
+function positionVideoLabel() {
+  const rect = remoteVideo.getBoundingClientRect();
+  videoLabel.style.left   = (rect.left + 10) + "px";
+  videoLabel.style.top    = (rect.top  + 10) + "px";
+  videoLabel.style.bottom = "auto";
+}
+
+/* reposition video label on drag/resize */
+const _origUpdateVideo = updateVideoTransform;
+
+window.addEventListener("resize", () => {
+  if (videoMinimized) positionVideoLabel();
+});
+
+document.addEventListener("keydown", (e) => {
+  /* Cmd+V (Mac) or Ctrl+V (Win) — but not when typing in an input */
+  if ((e.metaKey || e.ctrlKey) && e.key === "v") {
+    if (document.activeElement === chatInput) return;
+    e.preventDefault();
+    toggleVideoMinimized();
+  }
+});
 
 /* =====================================================================
    ENTER KEY (room code)
