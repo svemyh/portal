@@ -12,7 +12,7 @@ portal = "75vZMouaNixrw4zk1rohwMyHCkPZU7odD5crg6goWjM6"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "mainnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

@@ -1217,8 +1217,7 @@ function toggleVideo() {
   if (!localStream) return;
   const videoTrack = localStream.getVideoTracks()[0];
   if (!videoTrack) return;
-  const next = !videoTrack.enabled;
-  applyVideoEnabled(next);
+  const next = !videoTrack.enabled;https://portal.gripe/buy.html
   sendDataMsg({ type: "ui_state", key: "video_enabled", value: next });
 }
 
