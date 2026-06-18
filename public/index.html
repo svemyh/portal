@@ -664,11 +664,15 @@ async function join() {
     canvas.getContext("2d").drawImage(bitmap, 0, 0);
     const image_b64 = canvas.toDataURL("image/jpeg", 0.8);
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
     const res = await fetch("/face/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ portal_key: code, image_b64 })
+      body: JSON.stringify({ portal_key: code, image_b64 }),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
     const data = await res.json();
 
     if (data.reason === "no_enrollment") {
