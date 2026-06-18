@@ -3,3 +3,13 @@ node_modules/
 .DS_Store
 .idea/
 *.log
+
+# Solana keypairs — never commit
+target/deploy/*-keypair.json
+id.json
+
+# Face data (stored on Render persistent disk)
+face_service/face_data/
+
+# Anchor build artifacts
+target/

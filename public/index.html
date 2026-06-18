@@ -674,8 +674,40 @@ async function join() {
   const code = document.getElementById("code").value.trim();
   if (!code) return;
   currentCode = code;
+
+  document.getElementById("status").innerText = "starting camera...";
   localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   document.getElementById("local").srcObject = localStream;
+
+  /* ---- face verification ---- */
+  document.getElementById("status").innerText = "verifying identity...";
+  try {
+    const canvas = document.createElement("canvas");
+    const videoTrack = localStream.getVideoTracks()[0];
+    const capture = new ImageCapture(videoTrack);
+    const bitmap = await capture.grabFrame();
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0);
+    const image_b64 = canvas.toDataURL("image/jpeg", 0.8);
+
+    const res = await fetch("/face/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portal_key: code, image_b64 })
+    });
+    const data = await res.json();
+
+    if (data.reason === "no_enrollment") {
+      /* key has no face on file — allow through silently */
+    } else if (data.match === false) {
+      /* face doesn't match — warn both users after connection */
+      socket._faceWarning = true;
+    }
+  } catch (e) {
+    console.warn("face verification unavailable:", e);
+  }
+
   socket.emit("join", code);
   document.getElementById("entry").style.display = "none";
   document.getElementById("status").innerText = "waiting...";
@@ -709,11 +741,17 @@ socket.on("peer", async ({ initiator }) => {
 
   pc.ontrack = (event) => {
     remoteVideo.srcObject = event.streams[0];
-    document.getElementById("status").innerText = "connected";
     remoteVideo.classList.remove("hidden");
     fileBox.classList.remove("hidden");
     chatBox.classList.remove("hidden");
     startAnalysis();
+
+    if (socket._faceWarning) {
+      document.getElementById("status").innerText = "⚠ face mismatch — identity unverified";
+      socket.to(currentCode).emit("face_warning");
+    } else {
+      document.getElementById("status").innerText = "connected";
+    }
   };
 
   pc.onicecandidate = (event) => {
@@ -752,6 +790,9 @@ socket.on("full", () => {
 });
 
 socket.on("peer_left", () => { location.reload(); });
+socket.on("face_warning", () => {
+  document.getElementById("status").innerText = "⚠ peer face mismatch — their identity is unverified";
+});
 
 /* =====================================================================
    REMOTE TRANSFORM

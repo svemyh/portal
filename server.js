@@ -27,6 +27,27 @@ if (process.env.PORTAL_KEYS_ENABLED === "true") {
   console.log("portal key validation DISABLED (dev mode)");
 }
 
+/* ---------- FACE SERVICE PROXY ---------- */
+
+const FACE_SERVICE_URL = process.env.FACE_SERVICE_URL || "http://localhost:8000";
+
+async function faceProxy(path, body, res) {
+  try {
+    const r = await fetch(`${FACE_SERVICE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(503).json({ error: "face service unavailable" });
+  }
+}
+
+app.post("/face/enroll", (req, res) => faceProxy("/enroll", req.body, res));
+app.post("/face/verify", (req, res) => faceProxy("/verify", req.body, res));
+
 /* ---------- ICE CONFIG ---------- */
 
 app.get("/ice-config", (req, res) => {
@@ -90,6 +111,12 @@ io.on("connection", (socket) => {
 
   socket.on("signal", ({ code, data }) => {
     socket.to(code).emit("signal", data);
+  });
+
+  /* ---------- FACE WARNING ---------- */
+
+  socket.on("face_warning", (code) => {
+    socket.to(code).emit("face_warning");
   });
 
   /* ---------- REMOTE TRANSFORM ---------- */

@@ -115,6 +115,31 @@ button.secondary {
   line-height: 1.6;
 }
 
+/* face enrollment */
+#faceEnroll {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+#faceEnroll video {
+  width: 100%;
+  max-width: 320px;
+  border: 1px solid rgba(255,255,255,0.2);
+  transform: scaleX(-1);
+}
+
+#faceEnroll canvas { display: none; }
+
+#faceNote {
+  font-size: 10px;
+  opacity: 0.4;
+  letter-spacing: 1px;
+  line-height: 1.6;
+}
+
 </style>
 </head>
 <body>
@@ -158,6 +183,15 @@ button.secondary {
       SHARE IT WITH ONE OTHER PERSON TO OPEN A PORTAL SESSION.
     </div>
     <button class="secondary" onclick="copyKey()">COPY KEY</button>
+  </div>
+
+  <!-- Step 2: face enrollment shown after key is revealed -->
+  <div id="faceEnroll">
+    <div id="faceNote">SCAN YOUR FACE TO LINK IT TO THIS KEY.<br>THIS IS USED TO VERIFY YOUR IDENTITY DURING CONNECTIONS.</div>
+    <video id="faceVideo" autoplay playsinline muted></video>
+    <canvas id="faceCanvas"></canvas>
+    <button onclick="captureAndEnroll()">SCAN FACE</button>
+    <button class="secondary" onclick="skipEnroll()">SKIP FOR NOW</button>
   </div>
 
 </div>
@@ -294,11 +328,71 @@ async function purchase() {
 /*  Display key                                                         */
 /* ------------------------------------------------------------------ */
 
+let purchasedKey = null;
+
 function showKey(key) {
+  purchasedKey = key;
   document.getElementById("keyValue").innerText = key;
   document.getElementById("keyDisplay").style.display = "flex";
   document.getElementById("buyBtn").style.display = "none";
-  setStatus("payment confirmed");
+  setStatus("payment confirmed — scan your face to complete enrollment");
+  startFaceEnroll();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Face enrollment                                                     */
+/* ------------------------------------------------------------------ */
+
+async function startFaceEnroll() {
+  document.getElementById("faceEnroll").style.display = "flex";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    document.getElementById("faceVideo").srcObject = stream;
+  } catch {
+    setStatus("camera access denied — enrollment skipped");
+    document.getElementById("faceEnroll").style.display = "none";
+  }
+}
+
+async function captureAndEnroll() {
+  const video  = document.getElementById("faceVideo");
+  const canvas = document.getElementById("faceCanvas");
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  const image_b64 = canvas.toDataURL("image/jpeg", 0.8);
+
+  setStatus("enrolling face...");
+  try {
+    const res = await fetch("/face/enroll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portal_key: purchasedKey, image_b64 })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setStatus("face enrolled — your key is ready");
+      stopCamera();
+      document.getElementById("faceEnroll").style.display = "none";
+    } else {
+      setStatus("enrollment failed: " + (data.detail || "try again"));
+    }
+  } catch {
+    setStatus("face service unavailable — enrollment skipped");
+    stopCamera();
+    document.getElementById("faceEnroll").style.display = "none";
+  }
+}
+
+function skipEnroll() {
+  setStatus("enrollment skipped — you can re-enroll later");
+  stopCamera();
+  document.getElementById("faceEnroll").style.display = "none";
+}
+
+function stopCamera() {
+  const video = document.getElementById("faceVideo");
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
 }
 
 function copyKey() {
