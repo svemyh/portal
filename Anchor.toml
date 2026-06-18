@@ -1,18 +1,18 @@
 [toolchain]
-anchor_version = "0.29.0"
+anchor_version = "1.0.2"
 
 [features]
 seeds = true
 skip-lint = false
 
 [programs.mainnet]
-portal = "REPLACE_WITH_YOUR_PROGRAM_ID"
+portal = "75vZMouaNixrw4zk1rohwMyHCkPZU7odD5crg6goWjM6"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "mainnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
