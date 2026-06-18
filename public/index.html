@@ -214,6 +214,38 @@ button {
   transform: translate(0px,0px) scale(1);
   flex-direction: column;
   cursor: grab;
+  transition: width 0.2s ease, height 0.2s ease, left 0.2s ease, bottom 0.2s ease, top 0.2s ease;
+}
+
+#chatBox.maximized {
+  width: 575px;
+  height: 575px;
+  max-width: 92vw;
+  max-height: 92vw;
+  top: 50%;
+  left: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%) translate(0px, 0px);
+  z-index: 1500;
+}
+
+#chatBox.maximized .box-header {
+  font-size: 12px;
+  padding: 14px 16px 12px;
+}
+
+#chatBox.maximized .chat-msg {
+  font-size: 13px;
+}
+
+#chatBox.maximized #chatInput {
+  font-size: 13px;
+  padding: 12px 14px;
+}
+
+#chatBox.maximized #chatSend {
+  font-size: 12px;
+  padding: 12px 14px;
 }
 
 #chatBox .box-header {
@@ -330,7 +362,6 @@ button {
 
 <!-- FILE BOX -->
 <div id="fileBox" class="box">
-  <div class="box-header">FILES</div>
   <div id="fileBody">
     <span id="fileText">DROP FILE</span>
     <div id="fileProgress"><div id="fileProgressBar"></div></div>
@@ -367,6 +398,7 @@ let videoX = 0, videoY = 0, videoScale = 1;
 let videoMinimized = false;
 let fileX  = 0, fileY  = 0, fileScale  = 1;
 let chatX  = 0, chatY  = 0;
+let chatMaximized = false;
 
 /* remote control — shared state via data channel */
 let controller   = null;
@@ -846,7 +878,11 @@ function updateFileTransform() {
   fileBox.style.transform = `translate(${fileX}px,${fileY}px) scale(${fileScale})`;
 }
 function updateChatTransform() {
-  chatBox.style.transform = `translate(${chatX}px,${chatY}px)`;
+  if (chatMaximized) {
+    chatBox.style.transform = `translate(-50%,-50%) translate(${chatX}px,${chatY}px)`;
+  } else {
+    chatBox.style.transform = `translate(${chatX}px,${chatY}px)`;
+  }
 }
 
 /* ---- drag states ---- */
@@ -1059,6 +1095,21 @@ chatInput.addEventListener("mousedown", (e) => e.stopPropagation());
 chatInput.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
 
 /* =====================================================================
+   CHAT MAXIMIZE TOGGLE (Cmd+C / Ctrl+C)
+   ===================================================================== */
+
+function toggleChatMaximized() {
+  chatMaximized = !chatMaximized;
+  chatBox.classList.toggle("maximized", chatMaximized);
+
+  /* reset offset so it snaps cleanly to center */
+  chatX = 0; chatY = 0;
+  updateChatTransform();
+
+  flash(chatMaximized ? "CHAT +" : "CHAT —");
+}
+
+/* =====================================================================
    VIDEO MINIMIZE TOGGLE (Cmd+V / Ctrl+V)
    ===================================================================== */
 
@@ -1101,11 +1152,20 @@ window.addEventListener("resize", () => {
 });
 
 document.addEventListener("keydown", (e) => {
-  /* Cmd+V (Mac) or Ctrl+V (Win) — but not when typing in an input */
+  const typing = document.activeElement === chatInput;
+
+  /* Cmd+V / Ctrl+V — minimize/restore video */
   if ((e.metaKey || e.ctrlKey) && e.key === "v") {
-    if (document.activeElement === chatInput) return;
+    if (typing) return;
     e.preventDefault();
     toggleVideoMinimized();
+  }
+
+  /* Cmd+C / Ctrl+C — maximize/restore chat */
+  if ((e.metaKey || e.ctrlKey) && e.key === "c") {
+    if (typing) return;
+    e.preventDefault();
+    toggleChatMaximized();
   }
 });
 
