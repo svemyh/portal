@@ -18,9 +18,27 @@
     justify-content: center;
     gap: 20px;
     cursor: crosshair;
-    padding: 24px;
+    padding: 100px 24px 24px;
   }
-  h1 { font-size: 14px; letter-spacing: 4px; opacity: 0.5; }
+  #title {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9000;
+    text-align: center;
+    font-size: 14px;
+  }
+  #title span { font-size: 11px; opacity: 0.6; }
+  #status {
+    position: fixed;
+    top: 55px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5000;
+    font-size: 12px;
+    white-space: nowrap;
+  }
   .card {
     border: 1px solid rgba(255,255,255,0.15);
     padding: 24px;
@@ -97,14 +115,15 @@
 </head>
 <body>
 
-<h1>PORTAL / ENROLL</h1>
+<div id="title">portal<br><span>v0.0.9</span></div>
+<div id="status">enroll</div>
 
 <!-- auth gate -->
 <div class="card" id="authCard">
   <label>ADMIN KEY</label>
   <input type="password" id="adminKey" placeholder="enter admin key" autocomplete="off">
   <button onclick="unlock()">UNLOCK</button>
-  <div id="authStatus" class="err"></div>
+  <div id="authStatus" class="err" style="font-size:11px;letter-spacing:2px;min-height:16px"></div>
 </div>
 
 <!-- enrollment form (hidden until unlocked) -->
@@ -132,7 +151,7 @@
   <button id="captureBtn" onclick="captureFrame()" style="display:none">CAPTURE FRAME</button>
 
   <div class="divider"></div>
-  <div id="status"></div>
+  <div id="enrollStatus"></div>
   <button id="enrollBtn" onclick="enroll()" disabled>ENROLL FACE</button>
 </div>
 
@@ -146,7 +165,7 @@ const photoPreview  = document.getElementById("photoPreview");
 const captureCanvas = document.getElementById("captureCanvas");
 const captureBtn    = document.getElementById("captureBtn");
 const enrollBtn     = document.getElementById("enrollBtn");
-const statusEl      = document.getElementById("status");
+const statusEl      = document.getElementById("enrollStatus");
 
 function setStatus(msg, type) {
   statusEl.innerText = msg;
