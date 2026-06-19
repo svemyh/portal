@@ -9,8 +9,11 @@ declare_id!("75vZMouaNixrw4zk1rohwMyHCkPZU7odD5crg6goWjM6");
 /* ------------------------------------------------------------------ */
 
 /// Price in lamports (1 SOL = 1_000_000_000).
-/// Change this before deploying.
 const KEY_PRICE_LAMPORTS: u64 = 100_000_000; // 0.1 SOL
+
+/// Hardcoded treasury — the only wallet that can receive purchase funds.
+/// This prevents buyers from passing their own wallet as treasury.
+const TREASURY_PUBKEY: Pubkey = pubkey!("D6Ncr7cpk5YEQR4z1foysf25FuvEq8pagHRKMmJpKT76");
 
 /// Unambiguous alphanumeric charset (no 0/O, 1/I/l)
 const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -105,9 +108,9 @@ pub struct PurchaseKey<'info> {
     )]
     pub key_record: Account<'info, KeyRecord>,
 
-    /// Treasury — your wallet receives the SOL.
-    /// CHECK: SOL recipient only, no data validation needed.
-    #[account(mut)]
+    /// Treasury — must match the hardcoded TREASURY_PUBKEY constant.
+    /// CHECK: address constraint enforces the correct recipient.
+    #[account(mut, address = TREASURY_PUBKEY @ ErrorCode::InvalidTreasury)]
     pub treasury: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
@@ -165,4 +168,6 @@ pub enum ErrorCode {
     KeyAlreadyUsed,
     #[msg("Unauthorized")]
     Unauthorized,
+    #[msg("Invalid treasury account")]
+    InvalidTreasury,
 }
