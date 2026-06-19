@@ -581,6 +581,13 @@ function drawPeerFaceBox(normBox) {
   faceCtx.restore();
 }
 
+/* ---- reusable off-screen canvas for face capture (avoid per-call alloc) ---- */
+const _faceCapCanvas = document.createElement("canvas");
+const _faceCapCtx    = _faceCapCanvas.getContext("2d");
+const DETECT_W = 320, DETECT_H = 240; /* downsample — DeepFace doesn't need full res */
+_faceCapCanvas.width  = DETECT_W;
+_faceCapCanvas.height = DETECT_H;
+
 /* ---- capture local frame and send to Python face service ---- */
 
 async function detectLocalFace() {
@@ -591,11 +598,8 @@ async function detectLocalFace() {
   const timeout = setTimeout(() => ctrl.abort(), 8000);
 
   try {
-    const canvas = document.createElement("canvas");
-    canvas.width  = localVideo.videoWidth;
-    canvas.height = localVideo.videoHeight;
-    canvas.getContext("2d").drawImage(localVideo, 0, 0);
-    const image_b64 = canvas.toDataURL("image/jpeg", 0.7);
+    _faceCapCtx.drawImage(localVideo, 0, 0, DETECT_W, DETECT_H);
+    const image_b64 = _faceCapCanvas.toDataURL("image/jpeg", 0.7);
 
     const res  = await fetch("/face/detect", {
       method: "POST",
@@ -675,9 +679,16 @@ function startAnalysis() {
 
   canvasStatus("E:AWAITING_PEER");
 
-  /* slight delay so data channel is open before first send */
-  analysisInterval = setInterval(runAnalysis, 5000);
+  /* adaptive loop — reschedule after each run so slow requests don't pile up */
+  let _analysisRunning = false;
+  async function analysisLoop() {
+    if (_analysisRunning) return;
+    _analysisRunning = true;
+    await runAnalysis();
+    _analysisRunning = false;
+  }
   setTimeout(runAnalysis, 1500);
+  analysisInterval = setInterval(analysisLoop, 1800);
 }
 
 window.addEventListener("resize", updateLabels);
