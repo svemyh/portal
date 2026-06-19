@@ -45,7 +45,13 @@ async function faceProxy(path, body, res) {
   }
 }
 
-app.post("/face/enroll",  (req, res) => faceProxy("/enroll",  req.body, res));
+app.post("/face/enroll", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  faceProxy("/enroll", req.body, res);
+});
 app.post("/face/verify",  (req, res) => faceProxy("/verify",  req.body, res));
 app.post("/face/detect",  (req, res) => faceProxy("/detect",  req.body, res));
 
