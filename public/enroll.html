@@ -69,6 +69,20 @@
     border: 1px solid rgba(255,255,255,0.1);
     display: none;
   }
+  #dropZone {
+    border: 1px dashed rgba(255,255,255,0.3);
+    padding: 28px;
+    text-align: center;
+    letter-spacing: 2px;
+    font-size: 11px;
+    opacity: 0.5;
+    transition: border-color 0.15s, opacity 0.15s;
+    cursor: crosshair;
+  }
+  #dropZone.over {
+    border-color: white;
+    opacity: 1;
+  }
   #status {
     letter-spacing: 2px;
     font-size: 11px;
@@ -108,9 +122,10 @@
   <!-- capture canvas (hidden) -->
   <canvas id="captureCanvas"></canvas>
 
-  <div class="row">
-    <button onclick="startCamera()">USE CAMERA</button>
-    <button onclick="document.getElementById('fileInput').click()">UPLOAD PHOTO</button>
+  <button onclick="startCamera()">USE CAMERA</button>
+
+  <div id="dropZone" onclick="document.getElementById('fileInput').click()">
+    DROP PHOTO HERE<br><span style="opacity:0.5;font-size:10px">or click to browse</span>
   </div>
   <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="loadPhoto(event)">
 
@@ -191,9 +206,11 @@ function captureFrame() {
 }
 
 /* ---- photo upload ---- */
-function loadPhoto(event) {
-  const file = event.target.files[0];
-  if (!file) return;
+function loadFile(file) {
+  if (!file || !file.type.startsWith("image/")) {
+    setStatus("please drop an image file", "err");
+    return;
+  }
   stopCamera();
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -205,6 +222,17 @@ function loadPhoto(event) {
   };
   reader.readAsDataURL(file);
 }
+
+function loadPhoto(event) { loadFile(event.target.files[0]); }
+
+const dropZone = document.getElementById("dropZone");
+dropZone.addEventListener("dragover",  (e) => { e.preventDefault(); dropZone.classList.add("over"); });
+dropZone.addEventListener("dragleave", ()  => { dropZone.classList.remove("over"); });
+dropZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropZone.classList.remove("over");
+  loadFile(e.dataTransfer.files[0]);
+});
 
 /* ---- enroll ---- */
 async function enroll() {
