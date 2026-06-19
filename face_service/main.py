@@ -8,6 +8,7 @@ During connection, the user's face is verified against the stored encoding.
 import os
 import json
 import base64
+import threading
 import numpy as np
 from deepface import DeepFace
 from fastapi import FastAPI, HTTPException
@@ -18,6 +19,28 @@ import io
 import tempfile
 
 app = FastAPI(title="Portal Face Service")
+
+_models_ready = False
+
+def _prewarm():
+    global _models_ready
+    try:
+        print("Pre-warming DeepFace models in background...")
+        dummy = np.ones((160, 160, 3), dtype=np.uint8) * 128
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            Image.fromarray(dummy).save(f.name)
+            tmp = f.name
+        try:
+            DeepFace.represent(img_path=tmp, model_name="Facenet", enforce_detection=False)
+            DeepFace.extract_faces(img_path=tmp, enforce_detection=False)
+            _models_ready = True
+            print("Models ready.")
+        finally:
+            os.unlink(tmp)
+    except Exception as e:
+        print(f"Pre-warm failed: {e}")
+
+threading.Thread(target=_prewarm, daemon=True).start()
 
 app.add_middleware(
     CORSMiddleware,
@@ -167,7 +190,7 @@ def detect(req: DetectRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "models_ready": _models_ready}
 
 
 if __name__ == "__main__":
