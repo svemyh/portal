@@ -38,10 +38,14 @@ async function faceProxy(path, body, res) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const ct = r.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) {
+      return res.status(502).json({ error: "face service returned non-JSON response" });
+    }
     const data = await r.json();
     res.status(r.status).json(data);
   } catch (e) {
-    res.status(503).json({ error: "face service unavailable" });
+    res.status(503).json({ error: "face service unavailable", detail: e.message });
   }
 }
 
