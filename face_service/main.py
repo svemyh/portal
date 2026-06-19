@@ -1,21 +1,18 @@
 """
 Portal Face Recognition Service
-FastAPI service that handles face enrollment and verification.
+Uses face_recognition (dlib) — lightweight, no TensorFlow, ~150MB peak RAM.
 """
 
 import os
 import io
 import json
 import base64
-import threading
-import tempfile
-
 import numpy as np
 from PIL import Image
-from deepface import DeepFace
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import face_recognition
 
 app = FastAPI(title="Portal Face Service")
 
@@ -26,41 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serialize all DeepFace calls — TensorFlow global state is not thread-safe
-_lock = threading.Lock()
-
-# Face encodings stored as JSON: { "KEY12345": [...128 floats...] }
 DATA_FILE = os.environ.get("FACE_DATA_FILE", "face_data/encodings.json")
-os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-
-
-# ---------------------------------------------------------------------------
-# Model pre-warm — runs once in background after startup so the first real
-# request doesn't pay the cold-start penalty.
-# Uses opencv detector (bundled, no download) for detect, and loads Facenet
-# weights (92 MB) for enroll/verify — all safely serialised behind _lock.
-# ---------------------------------------------------------------------------
-
-def _prewarm():
-    with _lock:
-        try:
-            print("Pre-warming DeepFace models...")
-            dummy = np.ones((160, 160, 3), dtype=np.uint8) * 128
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                Image.fromarray(dummy).save(f.name)
-                tmp = f.name
-            try:
-                DeepFace.extract_faces(img_path=tmp, detector_backend="opencv",
-                                       enforce_detection=False, align=False)
-                DeepFace.represent(img_path=tmp, model_name="Facenet",
-                                   enforce_detection=False)
-                print("Models ready.")
-            finally:
-                os.unlink(tmp)
-        except Exception as e:
-            print(f"Pre-warm error (non-fatal): {e}")
-
-threading.Thread(target=_prewarm, daemon=True).start()
+_data_dir = os.path.dirname(DATA_FILE)
+if _data_dir:
+    os.makedirs(_data_dir, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -75,27 +41,16 @@ def load_encodings() -> dict:
 
 
 def save_encodings(data: dict):
+    if _data_dir:
+        os.makedirs(_data_dir, exist_ok=True)
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
 
 def decode_image(image_b64: str) -> np.ndarray:
-    image_data = base64.b64decode(image_b64.split(",")[-1])
-    image = Image.open(io.BytesIO(image_data)).convert("RGB")
+    raw = base64.b64decode(image_b64.split(",")[-1])
+    image = Image.open(io.BytesIO(raw)).convert("RGB")
     return np.array(image)
-
-
-def get_embedding(img_array: np.ndarray) -> list:
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-        Image.fromarray(img_array).save(f.name)
-        tmp_path = f.name
-    try:
-        with _lock:
-            result = DeepFace.represent(img_path=tmp_path, model_name="Facenet",
-                                        enforce_detection=True)
-        return result[0]["embedding"]
-    finally:
-        os.unlink(tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -123,13 +78,16 @@ def enroll(req: EnrollRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
-    try:
-        embedding = get_embedding(image)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"No face detected: {e}")
+    locations = face_recognition.face_locations(image, model="hog")
+    if not locations:
+        raise HTTPException(status_code=422, detail="No face detected in image")
+
+    encodings = face_recognition.face_encodings(image, locations)
+    if not encodings:
+        raise HTTPException(status_code=422, detail="Could not extract face encoding")
 
     data = load_encodings()
-    data[req.portal_key] = embedding
+    data[req.portal_key] = encodings[0].tolist()
     save_encodings(data)
     return {"status": "enrolled", "portal_key": req.portal_key}
 
@@ -145,47 +103,48 @@ def verify(req: VerifyRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
-    try:
-        live = np.array(get_embedding(image))
-    except Exception:
+    locations = face_recognition.face_locations(image, model="hog")
+    if not locations:
         return {"match": False, "reason": "no_face_detected", "confidence": 0.0}
 
-    stored = np.array(data[req.portal_key])
-    cos_sim = float(np.dot(stored, live) / (np.linalg.norm(stored) * np.linalg.norm(live)))
-    confidence = round(cos_sim, 3)
-    match = cos_sim > 0.7
+    encodings = face_recognition.face_encodings(image, locations)
+    if not encodings:
+        return {"match": False, "reason": "no_face_detected", "confidence": 0.0}
 
-    return {"match": match, "confidence": confidence,
-            "reason": "ok" if match else "face_mismatch"}
+    known = np.array(data[req.portal_key])
+    live = encodings[0]
+
+    # Lower distance = better match; threshold 0.6 is standard for dlib
+    distance = float(face_recognition.face_distance([known], live)[0])
+    confidence = round(max(0.0, 1.0 - distance), 3)
+    match = distance < 0.6
+
+    return {
+        "match": match,
+        "confidence": confidence,
+        "distance": round(distance, 3),
+        "reason": "ok" if match else "face_mismatch",
+    }
 
 
 @app.post("/detect")
 def detect(req: DetectRequest):
     try:
-        img = decode_image(req.image_b64)
-        h, w = img.shape[:2]
+        image = decode_image(req.image_b64)
+        h, w = image.shape[:2]
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            Image.fromarray(img).save(f.name)
-            tmp_path = f.name
-        with _lock:
-            faces = DeepFace.extract_faces(img_path=tmp_path,
-                                           detector_backend="opencv",
-                                           enforce_detection=True,
-                                           align=False)
-        os.unlink(tmp_path)
-
+        # HOG model: fast, CPU-friendly, no download required
+        locations = face_recognition.face_locations(image, model="hog")
         boxes = []
-        for face in faces:
-            fa = face["facial_area"]
+        for (top, right, bottom, left) in locations:
             boxes.append({
-                "x": fa["x"] / w,
-                "y": fa["y"] / h,
-                "w": fa["w"] / w,
-                "h": fa["h"] / h,
+                "x": left / w,
+                "y": top / h,
+                "w": (right - left) / w,
+                "h": (bottom - top) / h,
             })
         return {"faces": boxes}
     except Exception:
