@@ -41,3 +41,5 @@ services:
     envVars:
       - key: FACE_DATA_FILE
         value: face_data/encodings.json
+      - key: WEB_CONCURRENCY
+        value: "1"
