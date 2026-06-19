@@ -140,9 +140,8 @@ io.on("connection", (socket) => {
 
   /* ---------- FACE WARNING ---------- */
 
-  socket.on("face_warning", (code) => {
-    socket.to(code).emit("face_warning");
-  });
+  socket.on("face_warning",  (code) => { socket.to(code).emit("face_warning"); });
+  socket.on("face_verified", (code) => { socket.to(code).emit("face_verified"); });
 
   /* ---------- REMOTE TRANSFORM ---------- */
 

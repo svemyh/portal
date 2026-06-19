@@ -819,9 +819,12 @@ async function join() {
 
     if (data.reason === "no_enrollment") {
       /* key has no face on file — allow through silently */
+      socket._faceResult = "no_enrollment";
     } else if (data.match === false) {
-      /* face doesn't match — warn both users after connection */
+      socket._faceResult = "mismatch";
       socket._faceWarning = true;
+    } else if (data.match === true) {
+      socket._faceResult = "verified";
     }
   } catch (e) {
     console.warn("face verification unavailable:", e);
@@ -866,11 +869,11 @@ socket.on("peer", async ({ initiator }) => {
     helpBoxEl.classList.remove("hidden");
     startAnalysis();
 
-    if (socket._faceWarning) {
-      document.getElementById("status").innerText = "⚠ face mismatch — identity unverified";
+    setConnectionStatus(socket._faceResult);
+    if (socket._faceResult === "mismatch") {
       socket.emit("face_warning", currentCode);
-    } else {
-      document.getElementById("status").innerText = "connected";
+    } else if (socket._faceResult === "verified") {
+      socket.emit("face_verified", currentCode);
     }
   };
 
@@ -910,9 +913,29 @@ socket.on("full", () => {
 });
 
 socket.on("peer_left", () => { location.reload(); });
-socket.on("face_warning", () => {
-  document.getElementById("status").innerText = "⚠ peer face mismatch — their identity is unverified";
-});
+socket.on("face_warning",  () => { setPeerStatus("mismatch"); });
+socket.on("face_verified", () => { setPeerStatus("verified"); });
+
+function setConnectionStatus(result) {
+  const el = document.getElementById("status");
+  if (result === "verified") {
+    el.innerHTML = "connected<br><span style='color:#00ff88;font-size:10px;letter-spacing:2px'>verified</span>";
+  } else if (result === "mismatch") {
+    el.innerHTML = "connected<br><span style='color:#ff4444;font-size:10px;letter-spacing:2px'>" + currentCode + " — ✗</span>";
+  } else {
+    el.innerText = "connected";
+  }
+}
+
+function setPeerStatus(result) {
+  const el = document.getElementById("status");
+  const top = el.innerHTML.split("<br>")[0] || el.innerText.split("\n")[0] || "connected";
+  if (result === "verified") {
+    el.innerHTML = top + "<br><span style='color:#00ff88;font-size:10px;letter-spacing:2px'>peer verified</span>";
+  } else if (result === "mismatch") {
+    el.innerHTML = top + "<br><span style='color:#ff4444;font-size:10px;letter-spacing:2px'>peer ✗ unverified</span>";
+  }
+}
 
 /* =====================================================================
    REMOTE TRANSFORM
