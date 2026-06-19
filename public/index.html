@@ -561,9 +561,11 @@ function drawPeerFaceBox(normBox) {
   const line1   = currentCode || "—";
   const line2   = `#${peerNum}`;
 
+  const BRG = "#004225";
+
   faceCtx.save();
-  faceCtx.strokeStyle = "rgba(255,255,255,0.8)";
-  faceCtx.lineWidth   = 1;
+  faceCtx.strokeStyle = BRG;
+  faceCtx.lineWidth   = 2;
   faceCtx.strokeRect(Math.round(px), Math.round(py), Math.round(pw), Math.round(ph));
 
   faceCtx.font = "10px 'Courier New', monospace";
@@ -573,11 +575,11 @@ function drawPeerFaceBox(normBox) {
   const bx  = Math.round(px);
   const by  = Math.max(0, Math.round(py) - bh - 2);
 
-  faceCtx.fillStyle = "rgba(0,0,0,0.75)";
+  faceCtx.fillStyle = BRG;
   faceCtx.fillRect(bx, by, bw, bh);
-  faceCtx.fillStyle = "rgba(255,255,255,0.9)";
+  faceCtx.fillStyle = "rgba(0,0,0,0.9)";
   faceCtx.fillText(line1, bx + pad, by + lh);
-  faceCtx.fillStyle = "rgba(255,255,255,0.5)";
+  faceCtx.fillStyle = "rgba(0,0,0,0.7)";
   faceCtx.fillText(line2, bx + pad, by + lh * 2);
   faceCtx.restore();
 }
