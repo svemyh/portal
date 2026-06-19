@@ -40,7 +40,13 @@ async function faceProxy(path, body, res) {
     });
     const ct = r.headers.get("content-type") || "";
     if (!ct.includes("application/json")) {
-      return res.status(502).json({ error: "face service returned non-JSON response" });
+      let preview = "";
+      try { preview = (await r.text()).slice(0, 120); } catch {}
+      console.error(`face service non-JSON [${r.status}] ct="${ct}" body="${preview}"`);
+      return res.status(502).json({
+        error: "face service unavailable — it may be cold-starting, please retry in ~30s",
+        status: r.status,
+      });
     }
     const data = await r.json();
     res.status(r.status).json(data);
@@ -48,6 +54,14 @@ async function faceProxy(path, body, res) {
     res.status(503).json({ error: "face service unavailable", detail: e.message });
   }
 }
+
+app.post("/admin/auth", (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  res.json({ ok: true });
+});
 
 app.post("/face/enroll", (req, res) => {
   const adminKey = process.env.ADMIN_KEY;

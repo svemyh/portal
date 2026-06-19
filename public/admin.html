@@ -150,6 +150,13 @@ let adminKeyValue = "";
 let capturedB64   = null;
 let stream        = null;
 
+/* pre-warm face service so it's ready when we enroll */
+fetch("/face/detect", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ image_b64: "" }),
+}).catch(() => {});
+
 const camPreview    = document.getElementById("camPreview");
 const photoPreview  = document.getElementById("photoPreview");
 const captureCanvas = document.getElementById("captureCanvas");
@@ -163,9 +170,28 @@ function setStatus(msg, type) {
 }
 
 /* ---- auth ---- */
-function unlock() {
+async function unlock() {
   const val = document.getElementById("adminKey").value.trim();
   if (!val) return;
+  const authStatus = document.getElementById("authStatus");
+  authStatus.innerText = "checking...";
+  authStatus.className = "";
+  try {
+    const res = await fetch("/admin/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": val },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      authStatus.innerText = "invalid key";
+      authStatus.className = "err";
+      return;
+    }
+  } catch (e) {
+    authStatus.innerText = "server error: " + e.message;
+    authStatus.className = "err";
+    return;
+  }
   adminKeyValue = val;
   document.getElementById("authCard").style.display = "none";
   document.getElementById("enrollCard").style.display = "flex";
