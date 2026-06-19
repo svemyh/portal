@@ -35,23 +35,7 @@ services:
     runtime: python
     plan: starter
     rootDir: face_service
-    buildCommand: >
-      pip install -r requirements.txt &&
-      python -c "
-      import os, urllib.request, zipfile
-      d = 'models'; os.makedirs(d, exist_ok=True)
-      out = os.path.join(d, 'w600k_mbf.onnx')
-      if not os.path.exists(out):
-          print('Downloading MobileFaceNet model...')
-          tmp, _ = urllib.request.urlretrieve('https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip')
-          with zipfile.ZipFile(tmp) as zf:
-              for m in zf.namelist():
-                  if os.path.basename(m) == 'w600k_mbf.onnx':
-                      with zf.open(m) as src, open(out, 'wb') as dst: dst.write(src.read())
-          print('Model ready.')
-      else:
-          print('Model already cached.')
-      "
+    buildCommand: pip install -r requirements.txt && python download_models.py
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
     envVars:
