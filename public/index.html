@@ -171,7 +171,7 @@ button {
 
 #fileBox {
   right: 25px;
-  bottom: 25px;
+  top: 205px;
   width: auto;
   height: auto;
   background: rgba(0,0,0,0.7);
@@ -187,6 +187,8 @@ button {
   flex-direction: column;
   gap: 5px;
   min-width: 180px;
+  min-height: 148px;
+  justify-content: flex-end;
 }
 
 #fileText {
@@ -434,6 +436,7 @@ button {
     <div class="help-row"><span class="help-key">⌘V</span><span class="help-desc">MINIMISE VIDEO</span></div>
     <div class="help-row"><span class="help-key">⌘C</span><span class="help-desc">MAXIMISE CHAT</span></div>
     <div class="help-row"><span class="help-key">2×</span><span class="help-desc">REMOTE CONTROL</span></div>
+    <div class="help-row"><span class="help-key">⌘R</span><span class="help-desc">DISCONNECT</span></div>
   </div>
 </div>
 
@@ -1371,7 +1374,21 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     toggleVideo();
   }
+
+  /* Cmd+R / Ctrl+R — disconnect */
+  if ((e.metaKey || e.ctrlKey) && e.key === "r") {
+    if (typing) return;
+    e.preventDefault();
+    disconnect();
+  }
 });
+
+function disconnect() {
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  if (pc) { pc.close(); pc = null; }
+  socket.disconnect();
+  location.reload();
+}
 
 function toggleAudio() {
   if (!localStream) return;
