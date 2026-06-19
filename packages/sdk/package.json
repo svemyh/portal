@@ -14,7 +14,7 @@
   "keywords": ["solana", "anchor", "portal", "webrtc", "sdk"],
   "license": "MIT",
   "dependencies": {
-    "@maxtindall/portal-idl": "^0.1.0",
+    "@maxtindall/portal-idl": "file:../idl",
     "@solana/web3.js": "^1.91.1",
     "@coral-xyz/anchor": "^0.29.0"
   },
@@ -22,6 +22,7 @@
     "@solana/web3.js": ">=1.91.0"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.1.5",
     "typescript": "^5.4.0"
   }
 }
