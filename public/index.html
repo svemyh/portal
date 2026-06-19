@@ -433,7 +433,7 @@ button {
     <div class="help-row"><span class="help-key">⌘D</span><span class="help-desc">TOGGLE CAMERA</span></div>
     <div class="help-row"><span class="help-key">⌘V</span><span class="help-desc">MINIMISE VIDEO</span></div>
     <div class="help-row"><span class="help-key">⌘C</span><span class="help-desc">MAXIMISE CHAT</span></div>
-    <div class="help-row"><span class="help-key">2×</span><span class="help-desc">REMOTE CONTROL</span></div>
+    <div class="help-row"><span class="help-key">⌘T</span><span class="help-desc">REMOTE CONTROL</span></div>
     <div class="help-row"><span class="help-key">⌘R</span><span class="help-desc">DISCONNECT</span></div>
   </div>
 </div>
@@ -930,6 +930,9 @@ socket.on("transform", ({ target, posX, posY, scale }) => {
   } else if (target === "chat") {
     chatX = posX; chatY = posY;
     updateChatTransform();
+  } else if (target === "help") {
+    helpX = posX; helpY = posY;
+    updateHelpTransform();
   }
 });
 
@@ -1026,6 +1029,7 @@ function toggleRemoteControl() {
     emitTransform("video", videoX, videoY, videoScale);
     emitTransform("file",  fileX,  fileY,  fileScale);
     emitTransform("chat",  chatX,  chatY,  1);
+    emitTransform("help",  helpX,  helpY,  1);
   }
 }
 
@@ -1108,6 +1112,9 @@ const helpState  = {
   get x() { return helpX; }, set x(v) { helpX = v; },
   get y() { return helpY; }, set y(v) { helpY = v; },
   update: updateHelpTransform,
+  onDrag: () => {
+    if (controller === mySocketId) emitTransform("help", helpX, helpY, 1);
+  }
 };
 makeDraggable(helpBoxEl, helpState);
 
@@ -1189,10 +1196,6 @@ remoteVideo.addEventListener("touchend", (e) => {
   lastTap = now;
 }, { passive: false });
 
-remoteVideo.addEventListener("dblclick", () => {
-  if (videoState.wasMoved && videoState.wasMoved()) return;
-  toggleRemoteControl();
-});
 
 /* =====================================================================
    FILE UI
@@ -1371,6 +1374,13 @@ document.addEventListener("keydown", (e) => {
     if (typing) return;
     e.preventDefault();
     toggleVideo();
+  }
+
+  /* Cmd+T / Ctrl+T — toggle remote control */
+  if ((e.metaKey || e.ctrlKey) && e.key === "t") {
+    if (typing) return;
+    e.preventDefault();
+    toggleRemoteControl();
   }
 
   /* Cmd+R / Ctrl+R — disconnect */
