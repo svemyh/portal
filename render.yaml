@@ -35,7 +35,7 @@ services:
     runtime: python
     plan: starter
     rootDir: face_service
-    buildCommand: pip install cmake && pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
     envVars:
