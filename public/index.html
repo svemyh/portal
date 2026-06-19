@@ -984,6 +984,11 @@ function setupDataChannel(channel) {
         if (msg.key === "video_enabled")   flash(msg.value ? "PEER CAM ON" : "PEER CAM OFF");
       }
 
+      /* peer triggered global video cut — cut our camera too */
+      if (msg.type === "cut_video") {
+        applyVideoEnabled(msg.value);
+      }
+
     } else {
       /* binary = file chunk */
       incomingChunks.push(event.data);
@@ -1376,7 +1381,8 @@ function toggleVideo() {
   if (!videoTrack) return;
   const next = !videoTrack.enabled;
   applyVideoEnabled(next);
-  sendDataMsg({ type: "ui_state", key: "video_enabled", value: next });
+  /* cut/restore peer's camera too — global kill */
+  sendDataMsg({ type: "cut_video", value: next });
 }
 
 /* =====================================================================
