@@ -154,8 +154,10 @@
 <!-- enrollment form (hidden until unlocked) -->
 <div class="card" id="enrollCard" style="display:none">
   <label>PORTAL KEY</label>
-  <input type="text" id="portalKey" placeholder="e.g. ABCD1234" maxlength="32"
-         style="text-transform:uppercase">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="portalKeyDisplay" style="letter-spacing:4px;font-size:14px;opacity:0.35;flex:1">— — — — — — — —</span>
+    <button onclick="generateKey()" style="font-size:10px;letter-spacing:2px;padding:6px 12px;white-space:nowrap">GENERATE</button>
+  </div>
 
   <div class="divider"></div>
 
@@ -236,9 +238,7 @@ async function unlock() {
 document.getElementById("adminKey").addEventListener("keydown", e => {
   if (e.key === "Enter") unlock();
 });
-document.getElementById("portalKey").addEventListener("input", e => {
-  e.target.value = e.target.value.toUpperCase();
-});
+let currentPortalKey = "";
 
 /* ---- camera ---- */
 async function startCamera() {
@@ -273,7 +273,7 @@ function captureFrame() {
   stopCamera();
   photoPreview.src = capturedB64;
   photoPreview.style.display = "block";
-  enrollBtn.disabled = false;
+  enrollBtn.disabled = !currentPortalKey;
   setStatus("frame captured — click ENROLL FACE");
 }
 
@@ -289,7 +289,7 @@ function loadFile(file) {
     capturedB64 = e.target.result;
     photoPreview.src = capturedB64;
     photoPreview.style.display = "block";
-    enrollBtn.disabled = false;
+    enrollBtn.disabled = !currentPortalKey;
     setStatus("photo loaded — click ENROLL FACE");
   };
   reader.readAsDataURL(file);
@@ -336,6 +336,34 @@ async function loadEnrollments() {
   }
 }
 
+/* ---- generate key ---- */
+async function generateKey() {
+  const btn = document.querySelector('#enrollCard button[onclick="generateKey()"]');
+  btn.disabled = true;
+  btn.innerText = "...";
+  try {
+    const res = await fetch("/admin/generate-key", {
+      method: "POST",
+      headers: { "x-admin-secret": adminKeyValue },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      currentPortalKey = data.portalKey;
+      const display = document.getElementById("portalKeyDisplay");
+      display.innerText = currentPortalKey;
+      display.style.opacity = "1";
+      enrollBtn.disabled = !capturedB64;
+    } else {
+      setStatus(data.error || "key generation failed", "err");
+    }
+  } catch (e) {
+    setStatus("network error: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "GENERATE";
+  }
+}
+
 /* ---- delete enrollment ---- */
 async function deleteEnrollment(key) {
   if (!confirm(`Remove face enrollment for ${key}?`)) return;
@@ -364,8 +392,8 @@ async function deleteEnrollment(key) {
 
 /* ---- enroll ---- */
 async function enroll() {
-  const key = document.getElementById("portalKey").value.trim().toUpperCase();
-  if (!key)        { setStatus("enter a portal key", "err"); return; }
+  const key = currentPortalKey;
+  if (!key)        { setStatus("generate a portal key first", "err"); return; }
   if (!capturedB64){ setStatus("capture or upload a photo first", "err"); return; }
 
   enrollBtn.disabled = true;
@@ -386,7 +414,11 @@ async function enroll() {
       capturedB64 = null;
       photoPreview.style.display = "none";
       photoPreview.src = "";
-      document.getElementById("portalKey").value = "";
+      currentPortalKey = "";
+      const display = document.getElementById("portalKeyDisplay");
+      display.innerText = "— — — — — — — —";
+      display.style.opacity = "0.35";
+      enrollBtn.disabled = true;
       loadEnrollments();
     } else {
       setStatus(data.error || data.detail || "enrollment failed", "err");
