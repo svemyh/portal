@@ -201,6 +201,17 @@ def detect(req: DetectRequest):
     return {"faces": boxes}
 
 
+@app.delete("/enrolled/{portal_key}")
+def delete_enrolled(portal_key: str):
+    data = load_encodings()
+    key = portal_key.strip().upper()
+    if key not in data:
+        raise HTTPException(status_code=404, detail="Key not enrolled")
+    del data[key]
+    save_encodings(data)
+    return {"status": "deleted", "portal_key": key}
+
+
 @app.get("/enrolled")
 def enrolled():
     data = load_encodings()

@@ -323,13 +323,42 @@ async function loadEnrollments() {
       return;
     }
     listEl.innerHTML = enrollments.map(({ key, chain }) => `
-      <div class="enroll-row">
+      <div class="enroll-row" id="row-${key}">
         <span>${key}</span>
-        <span class="chain-badge ${chain}">${chain === "private" ? "private" : chain}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="chain-badge ${chain}">${chain}</span>
+          ${chain === "private" ? `<button onclick="deleteEnrollment('${key}')" style="font-size:9px;letter-spacing:1px;padding:2px 7px;border:1px solid rgba(255,80,80,0.4);color:rgba(255,100,100,0.7);background:none;cursor:crosshair" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444'" onmouseout="this.style.borderColor='rgba(255,80,80,0.4)';this.style.color='rgba(255,100,100,0.7)'">✕</button>` : ""}
+        </div>
       </div>
     `).join("");
   } catch (e) {
     listEl.innerHTML = "<div id='enrollEmpty'>face service unavailable</div>";
+  }
+}
+
+/* ---- delete enrollment ---- */
+async function deleteEnrollment(key) {
+  if (!confirm(`Remove face enrollment for ${key}?`)) return;
+  try {
+    const res = await fetch(`/admin/enrollments/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": adminKeyValue },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      const row = document.getElementById(`row-${key}`);
+      if (row) row.remove();
+      const countEl = document.getElementById("enrollCount");
+      countEl.innerText = Math.max(0, parseInt(countEl.innerText || "0") - 1);
+      const listEl = document.getElementById("enrollList");
+      if (!listEl.querySelector(".enroll-row")) {
+        listEl.innerHTML = "<div id='enrollEmpty'>no faces enrolled</div>";
+      }
+    } else {
+      alert(data.error || "delete failed");
+    }
+  } catch (e) {
+    alert("network error: " + e.message);
   }
 }
 

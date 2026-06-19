@@ -73,6 +73,29 @@ app.post("/face/enroll", (req, res) => {
 app.post("/face/verify",  (req, res) => faceProxy("/verify",  req.body, res));
 app.post("/face/detect",  (req, res) => faceProxy("/detect",  req.body, res));
 
+/* DELETE /admin/enrollments/:key — remove a private key's face enrollment */
+app.delete("/admin/enrollments/:key", async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const key = req.params.key.trim().toUpperCase();
+  // Only allow deleting private (non-chain) keys
+  if (portalKeys && process.env.PROGRAM_ID && !portalKeys.isAdminKey(key)) {
+    return res.status(403).json({ error: "cannot delete on-chain key enrollments" });
+  }
+  try {
+    const r = await fetch(`${FACE_SERVICE_URL}/enrolled/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
+    const data = await r.json();
+    if (!r.ok) return res.status(r.status).json(data);
+    res.json(data);
+  } catch (e) {
+    res.status(503).json({ error: "face service unavailable", detail: e.message });
+  }
+});
+
 /* GET /admin/enrollments — list enrolled keys with on-chain/private status */
 app.get("/admin/enrollments", async (req, res) => {
   const adminKey = process.env.ADMIN_KEY;
