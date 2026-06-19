@@ -594,6 +594,18 @@ async function detectLocalFace() {
   const localVideo = document.getElementById("local");
   if (!localVideo.videoWidth || !localVideo.videoHeight) return;
 
+  /* if camera is toggled off: clear overlay and tell peer no face box */
+  if (localStream) {
+    const vt = localStream.getVideoTracks()[0];
+    if (vt && !vt.enabled) {
+      localInfo = null;
+      sendDataMsg({ type: "face_box", box: null });
+      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\nCAM OFF`;
+      positionLabel(labelLocal, remoteVideo);
+      return;
+    }
+  }
+
   const ctrl    = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), 8000);
 
