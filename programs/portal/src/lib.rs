@@ -115,6 +115,10 @@ pub struct PurchaseKey<'info> {
 
 #[derive(Accounts)]
 pub struct MarkUsed<'info> {
+    /// Only the key's original buyer can mark it used (or omit this and
+    /// gate mark_used server-side). Replace constraint with your server
+    /// pubkey check before deploying to mainnet.
+    #[account(constraint = authority.key() == key_record.owner @ ErrorCode::Unauthorized)]
     pub authority: Signer<'info>,
 
     #[account(mut)]
@@ -159,4 +163,6 @@ pub enum ErrorCode {
     KeyGenerationFailed,
     #[msg("Key already used")]
     KeyAlreadyUsed,
+    #[msg("Unauthorized")]
+    Unauthorized,
 }

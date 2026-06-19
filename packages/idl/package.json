@@ -1,0 +1,19 @@
+{
+  "name": "@maxtindall/portal-idl",
+  "version": "0.1.0",
+  "description": "Portal program IDL and TypeScript types for the Portal Solana program",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["solana", "anchor", "portal", "idl"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

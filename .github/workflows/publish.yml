@@ -1,0 +1,50 @@
+name: Publish npm packages
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # needed for npm provenance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      # ── IDL package ────────────────────────────────────────────
+      - name: Install IDL deps
+        run: npm ci
+        working-directory: packages/idl
+
+      - name: Build IDL
+        run: npm run build
+        working-directory: packages/idl
+
+      - name: Publish IDL
+        run: npm publish --access public --provenance
+        working-directory: packages/idl
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # ── SDK package ────────────────────────────────────────────
+      - name: Install SDK deps
+        run: npm ci
+        working-directory: packages/sdk
+
+      - name: Build SDK
+        run: npm run build
+        working-directory: packages/sdk
+
+      - name: Publish SDK
+        run: npm publish --access public --provenance
+        working-directory: packages/sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

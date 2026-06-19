@@ -1,0 +1,27 @@
+{
+  "name": "@maxtindall/portal-sdk",
+  "version": "0.1.0",
+  "description": "Portal SDK — client library for Portal key purchase and validation",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["solana", "anchor", "portal", "webrtc", "sdk"],
+  "license": "MIT",
+  "dependencies": {
+    "@maxtindall/portal-idl": "^0.1.0",
+    "@solana/web3.js": "^1.91.1",
+    "@coral-xyz/anchor": "^0.29.0"
+  },
+  "peerDependencies": {
+    "@solana/web3.js": ">=1.91.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

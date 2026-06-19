@@ -8,11 +8,14 @@ skip-lint = false
 [programs.mainnet]
 portal = "75vZMouaNixrw4zk1rohwMyHCkPZU7odD5crg6goWjM6"
 
+[programs.devnet]
+portal = "75vZMouaNixrw4zk1rohwMyHCkPZU7odD5crg6goWjM6"
+
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "mainnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
