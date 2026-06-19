@@ -102,6 +102,31 @@
   #status.err { color: #ff4444; opacity: 1; }
   .divider { border-top: 1px solid rgba(255,255,255,0.1); }
   #authCard { max-width: 360px; }
+  #enrollmentsCard { max-width: 460px; }
+  #enrollmentsCard label { display: flex; justify-content: space-between; align-items: baseline; }
+  #enrollCount { opacity: 1; font-size: 13px; letter-spacing: 1px; }
+  .enroll-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+    letter-spacing: 2px;
+  }
+  .enroll-row:last-child { border-bottom: none; }
+  .chain-badge {
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 2px 6px;
+    border: 1px solid;
+    opacity: 0.8;
+  }
+  .chain-badge.on-chain  { color: #00ff88; border-color: #00ff88; }
+  .chain-badge.private   { color: rgba(255,255,255,0.4); border-color: rgba(255,255,255,0.2); }
+  .chain-badge.unknown   { color: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.15); }
+  #enrollList { display: flex; flex-direction: column; gap: 0; }
+  #enrollEmpty { opacity: 0.35; font-size: 11px; letter-spacing: 2px; text-align: center; padding: 10px 0; }
 </style>
 </head>
 <body>
@@ -114,6 +139,16 @@
   <input type="password" id="adminKey" placeholder="enter admin key" autocomplete="off">
   <button onclick="unlock()">UNLOCK</button>
   <div id="authStatus" class="err" style="font-size:11px;letter-spacing:2px;min-height:16px"></div>
+</div>
+
+<!-- enrolled faces registry (hidden until unlocked) -->
+<div class="card" id="enrollmentsCard" style="display:none">
+  <label>
+    <span>ENROLLED FACES</span>
+    <span id="enrollCount">—</span>
+  </label>
+  <div id="enrollList"><div id="enrollEmpty">no faces enrolled</div></div>
+  <button onclick="loadEnrollments()" style="font-size:10px;letter-spacing:2px;padding:6px 12px">REFRESH</button>
 </div>
 
 <!-- enrollment form (hidden until unlocked) -->
@@ -194,7 +229,9 @@ async function unlock() {
   }
   adminKeyValue = val;
   document.getElementById("authCard").style.display = "none";
+  document.getElementById("enrollmentsCard").style.display = "flex";
   document.getElementById("enrollCard").style.display = "flex";
+  loadEnrollments();
 }
 document.getElementById("adminKey").addEventListener("keydown", e => {
   if (e.key === "Enter") unlock();
@@ -269,6 +306,33 @@ dropZone.addEventListener("drop", (e) => {
   loadFile(e.dataTransfer.files[0]);
 });
 
+/* ---- enrollments registry ---- */
+async function loadEnrollments() {
+  const listEl  = document.getElementById("enrollList");
+  const countEl = document.getElementById("enrollCount");
+  listEl.innerHTML = "<div style='opacity:0.35;font-size:11px;letter-spacing:2px;text-align:center;padding:10px 0'>loading...</div>";
+  try {
+    const res = await fetch("/admin/enrollments", {
+      headers: { "x-admin-key": adminKeyValue },
+    });
+    if (!res.ok) { listEl.innerHTML = "<div id='enrollEmpty'>error loading enrollments</div>"; return; }
+    const { count, enrollments } = await res.json();
+    countEl.innerText = count;
+    if (!enrollments || enrollments.length === 0) {
+      listEl.innerHTML = "<div id='enrollEmpty'>no faces enrolled</div>";
+      return;
+    }
+    listEl.innerHTML = enrollments.map(({ key, chain }) => `
+      <div class="enroll-row">
+        <span>${key}</span>
+        <span class="chain-badge ${chain}">${chain === "private" ? "private" : chain}</span>
+      </div>
+    `).join("");
+  } catch (e) {
+    listEl.innerHTML = "<div id='enrollEmpty'>face service unavailable</div>";
+  }
+}
+
 /* ---- enroll ---- */
 async function enroll() {
   const key = document.getElementById("portalKey").value.trim().toUpperCase();
@@ -294,6 +358,7 @@ async function enroll() {
       photoPreview.style.display = "none";
       photoPreview.src = "";
       document.getElementById("portalKey").value = "";
+      loadEnrollments();
     } else {
       setStatus(data.error || data.detail || "enrollment failed", "err");
     }

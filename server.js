@@ -73,6 +73,37 @@ app.post("/face/enroll", (req, res) => {
 app.post("/face/verify",  (req, res) => faceProxy("/verify",  req.body, res));
 app.post("/face/detect",  (req, res) => faceProxy("/detect",  req.body, res));
 
+/* GET /admin/enrollments — list enrolled keys with on-chain/private status */
+app.get("/admin/enrollments", async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  try {
+    const r = await fetch(`${FACE_SERVICE_URL}/enrolled`);
+    if (!r.ok) return res.status(502).json({ error: "face service error" });
+    const { count, keys } = await r.json();
+
+    const records = await Promise.all(keys.map(async (k) => {
+      let chain = "private"; // default — off-chain/admin key
+      if (portalKeys) {
+        if (portalKeys.isAdminKey(k)) {
+          chain = "private";
+        } else {
+          // validate against the Solana program
+          const valid = await portalKeys.validateKey(k);
+          chain = valid ? "on-chain" : "private";
+        }
+      }
+      return { key: k, chain };
+    }));
+
+    res.json({ count, enrollments: records });
+  } catch (e) {
+    res.status(503).json({ error: "face service unavailable", detail: e.message });
+  }
+});
+
 /* ---------- ICE CONFIG ---------- */
 
 app.get("/ice-config", (req, res) => {

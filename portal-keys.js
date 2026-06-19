@@ -341,4 +341,8 @@ async function listenForKey(buyer, sessionId) {
   console.warn(`Session ${sessionId}: key not found after ${maxAttempts} attempts`);
 }
 
-module.exports = { init, validateKey };
+function isAdminKey(code) {
+  return adminKeys.has(code.trim().toUpperCase());
+}
+
+module.exports = { init, validateKey, isAdminKey };

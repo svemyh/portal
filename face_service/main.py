@@ -201,6 +201,12 @@ def detect(req: DetectRequest):
     return {"faces": boxes}
 
 
+@app.get("/enrolled")
+def enrolled():
+    data = load_encodings()
+    return {"count": len(data), "keys": list(data.keys())}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "model_ready": _rec_session is not None}
