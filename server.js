@@ -84,16 +84,12 @@ app.get("/admin/enrollments", async (req, res) => {
     if (!r.ok) return res.status(502).json({ error: "face service error" });
     const { count, keys } = await r.json();
 
+    const programDeployed = !!process.env.PROGRAM_ID;
     const records = await Promise.all(keys.map(async (k) => {
       let chain = "private"; // default — off-chain/admin key
-      if (portalKeys) {
-        if (portalKeys.isAdminKey(k)) {
-          chain = "private";
-        } else {
-          // validate against the Solana program
-          const valid = await portalKeys.validateKey(k);
-          chain = valid ? "on-chain" : "private";
-        }
+      if (portalKeys && programDeployed && !portalKeys.isAdminKey(k)) {
+        const valid = await portalKeys.validateKey(k);
+        chain = valid ? "on-chain" : "private";
       }
       return { key: k, chain };
     }));
