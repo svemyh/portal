@@ -322,15 +322,45 @@ async function loadEnrollments() {
       listEl.innerHTML = "<div id='enrollEmpty'>no faces enrolled</div>";
       return;
     }
-    listEl.innerHTML = enrollments.map(({ key, chain }) => `
-      <div class="enroll-row" id="row-${key}">
-        <span>${key}</span>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="chain-badge ${chain}">${chain}</span>
-          ${chain === "private" ? `<button onclick="deleteEnrollment('${key}')" style="font-size:9px;letter-spacing:1px;padding:2px 7px;border:1px solid rgba(255,80,80,0.4);color:rgba(255,100,100,0.7);background:none;cursor:crosshair" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444'" onmouseout="this.style.borderColor='rgba(255,80,80,0.4)';this.style.color='rgba(255,100,100,0.7)'">✕</button>` : ""}
-        </div>
-      </div>
-    `).join("");
+    /* Group guests under their parent key */
+    const parents = {};
+    const guests  = {};
+    for (const e of enrollments) {
+      if (e.key.includes(":")) {
+        const base = e.key.split(":")[0];
+        if (!guests[base]) guests[base] = [];
+        guests[base].push(e);
+      } else {
+        parents[e.key] = e;
+      }
+    }
+    /* Also surface any orphan guest keys (parent not enrolled) */
+    for (const base of Object.keys(guests)) {
+      if (!parents[base]) parents[base] = { key: base, chain: "unknown", orphan: true };
+    }
+
+    const deleteBtn = (rawKey, chain) => chain === "private" || rawKey.includes(":")
+      ? `<button onclick="deleteEnrollment('${rawKey}')" style="font-size:9px;letter-spacing:1px;padding:2px 7px;border:1px solid rgba(255,80,80,0.4);color:rgba(255,100,100,0.7);background:none;cursor:crosshair" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444'" onmouseout="this.style.borderColor='rgba(255,80,80,0.4)';this.style.color='rgba(255,100,100,0.7)'">✕</button>`
+      : "";
+
+    listEl.innerHTML = Object.values(parents).map(({ key, chain, orphan }) => {
+      const guestRows = (guests[key] || []).map((g, i) => `
+        <div class="enroll-row" id="row-${g.key}" style="padding-left:18px;opacity:0.75">
+          <span style="font-size:11px">↳ guest ${i + 1}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="chain-badge ${chain}" style="font-size:9px">guest</span>
+            ${deleteBtn(g.key, chain)}
+          </div>
+        </div>`).join("");
+      return `
+        <div class="enroll-row" id="row-${key}" ${orphan ? 'style="opacity:0.5"' : ""}>
+          <span>${key}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="chain-badge ${chain}">${chain}</span>
+            ${deleteBtn(key, chain)}
+          </div>
+        </div>${guestRows}`;
+    }).join("");
   } catch (e) {
     listEl.innerHTML = "<div id='enrollEmpty'>face service unavailable</div>";
   }

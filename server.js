@@ -70,9 +70,10 @@ app.post("/face/enroll", (req, res) => {
   }
   faceProxy("/enroll", req.body, res);
 });
-app.post("/face/verify",   (req, res) => faceProxy("/verify",   req.body, res));
-app.post("/face/detect",   (req, res) => faceProxy("/detect",   req.body, res));
-app.post("/face/identify", (req, res) => faceProxy("/identify", req.body, res));
+app.post("/face/verify",        (req, res) => faceProxy("/verify",       req.body, res));
+app.post("/face/detect",        (req, res) => faceProxy("/detect",        req.body, res));
+app.post("/face/identify",      (req, res) => faceProxy("/identify",      req.body, res));
+app.post("/face/enroll-guest",  (req, res) => faceProxy("/enroll-guest",  req.body, res));
 
 /* DELETE /admin/enrollments/:key — remove a private key's face enrollment */
 app.delete("/admin/enrollments/:key", async (req, res) => {

@@ -435,6 +435,7 @@ button {
     <div class="help-row"><span class="help-key">⌘C</span><span class="help-desc">MAXIMISE CHAT</span></div>
     <div class="help-row"><span class="help-key">⌘S</span><span class="help-desc">REMOTE CONTROL</span></div>
     <div class="help-row"><span class="help-key">⌘I</span><span class="help-desc">RESCAN IDENTITY</span></div>
+    <div class="help-row"><span class="help-key">⌘G</span><span class="help-desc">ENROLL GUEST</span></div>
     <div class="help-row"><span class="help-key">⌘R</span><span class="help-desc">DISCONNECT</span></div>
   </div>
 </div>
@@ -572,7 +573,9 @@ function drawPeerFaceBox(normBox) {
 
   const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
   const line1   = normBox.key ? normBox.key : (currentCode || "—");
-  const line2   = normBox.key ? `✓ identified` : `#${peerNum}`;
+  const line2   = normBox.key
+    ? (normBox.is_guest ? "· guest" : "✓ identified")
+    : `#${peerNum}`;
 
   const BRG = "#004225";
 
@@ -925,6 +928,44 @@ socket.on("invalid_key", () => {
 socket.on("peer_left", () => { location.reload(); });
 socket.on("face_warning",  () => { setPeerStatus("mismatch"); });
 socket.on("face_verified", () => { setPeerStatus("verified"); });
+
+async function enrollGuest() {
+  if (!remoteVideo || remoteVideo.readyState < 2 || !currentCode) {
+    document.getElementById("status").innerText = "no peer video to enroll from";
+    return;
+  }
+  const statusEl = document.getElementById("status");
+  statusEl.innerText = "enrolling guest...";
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width  = remoteVideo.videoWidth  || 640;
+    canvas.height = remoteVideo.videoHeight || 480;
+    canvas.getContext("2d").drawImage(remoteVideo, 0, 0);
+    const image_b64 = canvas.toDataURL("image/jpeg", 0.9);
+    const res = await fetch("/face/enroll-guest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portal_key: currentCode, image_b64 }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      statusEl.innerText = `guest enrolled (${data.guest_slot})`;
+      statusEl.style.color = "#00ff88";
+      setTimeout(() => {
+        statusEl.style.color = "";
+        setConnectionStatus(socket._faceResult);
+      }, 3000);
+    } else {
+      statusEl.innerText = data.detail || data.error || "guest enrollment failed";
+      statusEl.style.color = "#ff4444";
+      setTimeout(() => { statusEl.style.color = ""; setConnectionStatus(socket._faceResult); }, 3000);
+    }
+  } catch (e) {
+    statusEl.innerText = "guest enrollment error";
+    statusEl.style.color = "#ff4444";
+    setTimeout(() => { statusEl.style.color = ""; setConnectionStatus(socket._faceResult); }, 3000);
+  }
+}
 
 async function rescueIdentity() {
   if (!localStream || !currentCode) return;
@@ -1467,6 +1508,13 @@ document.addEventListener("keydown", (e) => {
     if (typing) return;
     e.preventDefault();
     rescueIdentity();
+  }
+
+  /* Cmd+G / Ctrl+G — enroll guest */
+  if ((e.metaKey || e.ctrlKey) && e.key === "g") {
+    if (typing) return;
+    e.preventDefault();
+    enrollGuest();
   }
 
   /* Cmd+R / Ctrl+R — disconnect */

@@ -120,8 +120,26 @@ def get_embedding(img_bgr: np.ndarray, box: tuple[int, int, int, int]) -> np.nda
     return emb / norm if norm > 0 else emb
 
 
+def base_key(k: str) -> str:
+    """Strip guest suffix — 'ABCD1234:g2' → 'ABCD1234'."""
+    return k.split(":")[0]
+
+
+def is_guest_key(k: str) -> bool:
+    return ":" in k
+
+
+def next_guest_slot(portal_key: str, data: dict) -> str:
+    """Return the next unused guest slot for a key, e.g. 'ABCD1234:g1'."""
+    base = portal_key.strip().upper()
+    i = 1
+    while f"{base}:g{i}" in data:
+        i += 1
+    return f"{base}:g{i}"
+
+
 def best_match(emb: np.ndarray, data: dict) -> tuple[str | None, float]:
-    """Compare embedding against all enrolled keys. Returns (key, confidence)."""
+    """Compare embedding against all enrolled keys. Returns (raw_key, confidence)."""
     best_key, best_sim = None, 0.0
     for k, stored in data.items():
         sim = float(np.dot(np.array(stored), emb))
@@ -220,12 +238,14 @@ def identify(req: DetectRequest):
         x, y, fw, fh = box
         entry = {
             "x": x / w, "y": y / h, "w": fw / w, "h": fh / h,
-            "key": None, "confidence": 0.0,
+            "key": None, "is_guest": False, "confidence": 0.0,
         }
         emb = get_embedding(img, box)
         if emb is not None and data:
-            matched_key, confidence = best_match(emb, data)
-            entry["key"] = matched_key
+            raw_key, confidence = best_match(emb, data)
+            if raw_key:
+                entry["key"] = base_key(raw_key)
+                entry["is_guest"] = is_guest_key(raw_key)
             entry["confidence"] = confidence
         results.append(entry)
 
@@ -254,6 +274,30 @@ def delete_enrolled(portal_key: str):
     del data[key]
     save_encodings(data)
     return {"status": "deleted", "portal_key": key}
+
+
+@app.post("/enroll-guest")
+def enroll_guest(req: EnrollRequest):
+    """Enroll a guest face under the keyholder's portal key (KEY:g1, KEY:g2, …)."""
+    try:
+        img = decode_image_bgr(req.image_b64)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+
+    faces = detect_faces(img)
+    if not faces:
+        raise HTTPException(status_code=422, detail="No face detected in image")
+
+    box = max(faces, key=lambda b: b[2] * b[3])
+    emb = get_embedding(img, box)
+    if emb is None:
+        raise HTTPException(status_code=503, detail="Recognition model not loaded")
+
+    data = load_encodings()
+    slot = next_guest_slot(req.portal_key, data)
+    data[slot] = emb.tolist()
+    save_encodings(data)
+    return {"status": "enrolled", "portal_key": req.portal_key, "guest_slot": slot}
 
 
 @app.get("/enrolled")

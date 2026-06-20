@@ -20,6 +20,8 @@ services:
         generateValue: true
       - key: ADMIN_SECRET
         generateValue: true
+      - key: ADMIN_KEYS
+        sync: false       # comma-separated list of permanent portal keys (survive redeploys)
       - key: FACE_SERVICE_URL
         sync: false       # set to the face service URL after it deploys
       - key: TURN_URL_UDP
