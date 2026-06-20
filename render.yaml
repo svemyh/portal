@@ -18,6 +18,8 @@ services:
         sync: false
       - key: ADMIN_SECRET
         generateValue: true
+      - key: ADMIN_KEY
+        generateValue: true
       - key: FACE_SERVICE_URL
         sync: false       # set to the face service URL after it deploys
       - key: TURN_URL_UDP

@@ -57,7 +57,7 @@ async function faceProxy(path, body, res) {
 
 app.post("/admin/auth", (req, res) => {
   const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+  if (!adminKey || req.headers["x-admin-key"] !== adminKey) {
     return res.status(401).json({ error: "unauthorized" });
   }
   res.json({ ok: true });
@@ -65,7 +65,7 @@ app.post("/admin/auth", (req, res) => {
 
 app.post("/face/enroll", (req, res) => {
   const adminKey = process.env.ADMIN_KEY;
-  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+  if (!adminKey || req.headers["x-admin-key"] !== adminKey) {
     return res.status(401).json({ error: "unauthorized" });
   }
   faceProxy("/enroll", req.body, res);
@@ -167,4 +167,7 @@ io.on("connection", (socket) => {
 /* ---------- START ---------- */
 
 const PORT = process.env.PORT || 3000;
+if (!process.env.ADMIN_KEY) {
+  console.warn("WARNING: ADMIN_KEY is not set — /admin/auth and /face/enroll will reject all requests (fail closed).");
+}
 server.listen(PORT, () => console.log("running on port " + PORT));
