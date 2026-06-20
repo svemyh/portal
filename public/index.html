@@ -407,7 +407,7 @@ button {
 <div id="status"></div>
 
 <div id="entry">
-  <input id="code" placeholder="enter code">
+  <input id="code" placeholder="portal key">
   <button onclick="join()">enter</button>
 </div>
 
@@ -1416,7 +1416,8 @@ window.addEventListener("resize", () => {
 });
 
 document.addEventListener("keydown", (e) => {
-  const typing = document.activeElement === chatInput;
+  const el = document.activeElement;
+  const typing = el === chatInput || el.tagName === "INPUT" || el.tagName === "TEXTAREA";
 
   /* Cmd+V / Ctrl+V — minimize/restore video */
   if ((e.metaKey || e.ctrlKey) && e.key === "v") {
