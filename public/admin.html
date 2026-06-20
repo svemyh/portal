@@ -344,7 +344,7 @@ async function generateKey() {
   try {
     const res = await fetch("/admin/generate-key", {
       method: "POST",
-      headers: { "x-admin-secret": adminKeyValue },
+      headers: { "x-admin-key": adminKeyValue },
     });
     const data = await res.json();
     if (res.ok) {
