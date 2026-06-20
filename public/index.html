@@ -620,7 +620,7 @@ async function detectLocalFace() {
     if (vt && !vt.enabled) {
       localInfo = null;
       sendDataMsg({ type: "face_box", box: null });
-      labelLocal.innerText = `${currentCode || "—"}\n${roleLabel(myUserNumber)}\nCAM OFF`;
+      labelLocal.innerText = `${roleLabel(myUserNumber)}\nCAM OFF`;
       positionLabel(labelLocal, remoteVideo);
       return;
     }
@@ -647,15 +647,15 @@ async function detectLocalFace() {
       const face = data.faces[0];
       sendDataMsg({ type: "face_box", box: face });
       const matchedKey = face.key || null;
-      labelLocal.innerText = `${currentCode || "—"}\n${roleLabel(myUserNumber)}${matchedKey ? "\n✓ " + matchedKey : ""}`;
+      labelLocal.innerText = `${roleLabel(myUserNumber)}${matchedKey ? "\n✓ " + matchedKey : ""}`;
     } else {
       localInfo = null;
-      labelLocal.innerText = `${currentCode || "—"}\n${roleLabel(myUserNumber)}\nE:NO_FACE`;
+      labelLocal.innerText = `${roleLabel(myUserNumber)}\nE:NO_FACE`;
     }
   } catch (e) {
     clearTimeout(timeout);
     const code = e.name === "AbortError" ? "E:SVC_TIMEOUT" : "E:SVC_OFFLINE";
-    labelLocal.innerText = `${currentCode || "—"}\n${roleLabel(myUserNumber)}\n${code}`;
+    labelLocal.innerText = `${roleLabel(myUserNumber)}\n${code}`;
     console.warn("face detect:", e);
   }
   positionLabel(labelLocal, remoteVideo);
@@ -700,7 +700,7 @@ function startAnalysis() {
 
   /* set corner labels immediately so key/user shows before detection completes */
   const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
-  labelLocal.innerText  = `${currentCode || "—"}\n#${myUserNumber || "—"}\nE:DETECTING`;
+  labelLocal.innerText  = `${roleLabel(myUserNumber)}\nE:DETECTING`;
   positionLabel(labelLocal, remoteVideo);
   const rect = remoteVideo.getBoundingClientRect();
   labelRemote.style.right  = (window.innerWidth - rect.right + 10) + "px";
@@ -708,7 +708,7 @@ function startAnalysis() {
   labelRemote.style.left   = "auto";
   labelRemote.style.top    = "auto";
   labelRemote.style.textAlign = "right";
-  labelRemote.innerText = `${currentCode || "—"}\n${roleLabel(peerNum)}\nE:AWAITING`;
+  labelRemote.innerText = `${roleLabel(peerNum)}\nE:AWAITING`;
 
   canvasStatus("E:AWAITING_PEER");
 
@@ -1015,6 +1015,7 @@ async function rescueIdentity() {
 
 function setConnectionStatus(result) {
   const el = document.getElementById("status");
+  el.style.color = "";
   if (result === "verified") {
     el.innerHTML = "connected<br><span style='color:#00ff88;font-size:10px;letter-spacing:2px'>" + (currentCode || "") + "</span>";
   } else if (result === "mismatch") {
@@ -1113,7 +1114,7 @@ function setupDataChannel(channel) {
         labelRemote.style.left   = "auto";
         labelRemote.style.top    = "auto";
         labelRemote.style.textAlign = "right";
-        labelRemote.innerText = `${currentCode || "—"}\n${roleLabel(peerNum)}`;
+        labelRemote.innerText = `${roleLabel(peerNum)}`;
       }
 
       /* global ui state sync */
