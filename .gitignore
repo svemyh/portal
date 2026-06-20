@@ -11,5 +11,8 @@ id.json
 # Face data (stored on Render persistent disk)
 face_service/face_data/
 
+# Admin key persistence (server-side, not for version control)
+data/
+
 # Anchor build artifacts
 target/

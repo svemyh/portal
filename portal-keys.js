@@ -26,7 +26,8 @@ const {
 } = require("@solana/web3.js");
 
 const { Program, AnchorProvider, Wallet, BN } = require("@coral-xyz/anchor");
-const { readFileSync } = require("fs");
+const fs = require("fs");
+const path = require("path");
 const crypto = require("crypto");
 
 /* ------------------------------------------------------------------ */
@@ -47,7 +48,7 @@ const connection = new Connection(RPC_URL, "confirmed");
 /* Load server keypair (used only for mark_used instruction) */
 function loadServerKeypair() {
   try {
-    const raw = JSON.parse(readFileSync(process.env.SERVER_KEYPAIR || "~/.config/solana/id.json"));
+    const raw = JSON.parse(fs.readFileSync(process.env.SERVER_KEYPAIR || "~/.config/solana/id.json"));
     return Keypair.fromSecretKey(Uint8Array.from(raw));
   } catch {
     console.warn("SERVER_KEYPAIR not found — mark_used will be unavailable");
@@ -134,6 +135,32 @@ const pendingSessions = new Map();
 
 const adminKeys = new Set();
 
+/* File-based key persistence — survives restarts, lost only on full redeploy */
+const KEYS_FILE = process.env.ADMIN_KEYS_FILE || path.join(__dirname, "data", "admin-keys.json");
+
+function loadPersistedKeys() {
+  try {
+    if (fs.existsSync(KEYS_FILE)) {
+      const keys = JSON.parse(fs.readFileSync(KEYS_FILE, "utf8"));
+      keys.forEach(k => adminKeys.add(k));
+      console.log(`Loaded ${keys.length} persisted admin keys`);
+    }
+  } catch (e) {
+    console.warn("Could not load persisted admin keys:", e.message);
+  }
+}
+
+function persistKeys() {
+  try {
+    fs.mkdirSync(path.dirname(KEYS_FILE), { recursive: true });
+    fs.writeFileSync(KEYS_FILE, JSON.stringify([...adminKeys]));
+  } catch (e) {
+    console.warn("Could not persist admin keys:", e.message);
+  }
+}
+
+loadPersistedKeys();
+
 /* Load permanent gifted keys from env on startup
    ADMIN_KEYS=KEY1,KEY2,KEY3 in your .env               */
 if (process.env.ADMIN_KEYS) {
@@ -214,6 +241,7 @@ function init(app) {
 
     const key = generateAdminKey();
     adminKeys.add(key);
+    persistKeys();
     console.log(`Admin key generated: ${key} (total admin keys: ${adminKeys.size})`);
     res.json({ portalKey: key });
   });
