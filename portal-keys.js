@@ -160,8 +160,8 @@ async function validateKey(code) {
   /* Check admin keys first — instant, no RPC call */
   if (adminKeys.has(code)) return true;
 
-  /* Contract not yet deployed — allow all codes through */
-  if (!PROGRAM_ID) return true;
+  /* Contract not yet deployed — only admin keys are valid */
+  if (!PROGRAM_ID) return false;
 
   try {
     /* Fetch all KeyRecord accounts and look for a matching key */
