@@ -965,21 +965,22 @@ async function rescueIdentity() {
 function setConnectionStatus(result) {
   const el = document.getElementById("status");
   if (result === "verified") {
-    el.innerHTML = "connected<br><span style='color:#00ff88;font-size:10px;letter-spacing:2px'>verified</span>";
+    el.innerHTML = "connected<br><span style='color:#00ff88;font-size:10px;letter-spacing:2px'>" + (currentCode || "") + "</span>";
   } else if (result === "mismatch") {
-    el.innerHTML = "connected<br><span style='color:#ff4444;font-size:10px;letter-spacing:2px'>" + currentCode + " — ✗</span>";
+    el.innerHTML = "connected<br><span style='color:#ff4444;font-size:10px;letter-spacing:2px'>" + (currentCode || "") + "</span>";
   } else {
     el.innerText = "connected";
   }
 }
 
 function setPeerStatus(result) {
-  const el = document.getElementById("status");
-  const top = el.innerHTML.split("<br>")[0] || el.innerText.split("\n")[0] || "connected";
+  const el  = document.getElementById("status");
+  const top = el.innerHTML.split("<br>")[0] || "connected";
+  const key = currentCode || "";
   if (result === "verified") {
-    el.innerHTML = top + "<br><span style='color:#00ff88;font-size:10px;letter-spacing:2px'>peer verified</span>";
+    el.innerHTML = top + "<br><span style='color:#00ff88;font-size:10px;letter-spacing:2px'>" + key + "</span>";
   } else if (result === "mismatch") {
-    el.innerHTML = top + "<br><span style='color:#ff4444;font-size:10px;letter-spacing:2px'>peer ✗ unverified</span>";
+    el.innerHTML = top + "<br><span style='color:#ff4444;font-size:10px;letter-spacing:2px'>" + key + "</span>";
   }
 }
 
