@@ -435,7 +435,7 @@ button {
     <div class="help-row"><span class="help-key">⌘C</span><span class="help-desc">MAXIMISE CHAT</span></div>
     <div class="help-row"><span class="help-key">⌘S</span><span class="help-desc">REMOTE CONTROL</span></div>
     <div class="help-row"><span class="help-key">⌘I</span><span class="help-desc">RESCAN IDENTITY</span></div>
-    <div class="help-row"><span class="help-key">⌘G</span><span class="help-desc">ENROLL GUEST</span></div>
+    <div class="help-row"><span class="help-key">⌘G</span><span class="help-desc">VERIFY / ENROLL GUEST</span></div>
     <div class="help-row"><span class="help-key">⌘R</span><span class="help-desc">DISCONNECT</span></div>
   </div>
 </div>
@@ -491,6 +491,8 @@ let mySocketId   = null;
 
 socket.on("connect", () => { mySocketId = socket.id; });
 socket.on("assigned", ({ userNumber }) => { myUserNumber = userNumber; });
+
+function roleLabel(num) { return num === 1 ? "#portal key" : "#portal key - guest"; }
 
 /* ---- elements ---- */
 const remoteVideo  = document.getElementById("remote");
@@ -618,7 +620,7 @@ async function detectLocalFace() {
     if (vt && !vt.enabled) {
       localInfo = null;
       sendDataMsg({ type: "face_box", box: null });
-      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\nCAM OFF`;
+      labelLocal.innerText = `${currentCode || "—"}\n${roleLabel(myUserNumber)}\nCAM OFF`;
       positionLabel(labelLocal, remoteVideo);
       return;
     }
@@ -645,15 +647,15 @@ async function detectLocalFace() {
       const face = data.faces[0];
       sendDataMsg({ type: "face_box", box: face });
       const matchedKey = face.key || null;
-      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}${matchedKey ? "\n✓ " + matchedKey : ""}`;
+      labelLocal.innerText = `${currentCode || "—"}\n${roleLabel(myUserNumber)}${matchedKey ? "\n✓ " + matchedKey : ""}`;
     } else {
       localInfo = null;
-      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\nE:NO_FACE`;
+      labelLocal.innerText = `${currentCode || "—"}\n${roleLabel(myUserNumber)}\nE:NO_FACE`;
     }
   } catch (e) {
     clearTimeout(timeout);
     const code = e.name === "AbortError" ? "E:SVC_TIMEOUT" : "E:SVC_OFFLINE";
-    labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\n${code}`;
+    labelLocal.innerText = `${currentCode || "—"}\n${roleLabel(myUserNumber)}\n${code}`;
     console.warn("face detect:", e);
   }
   positionLabel(labelLocal, remoteVideo);
@@ -706,7 +708,7 @@ function startAnalysis() {
   labelRemote.style.left   = "auto";
   labelRemote.style.top    = "auto";
   labelRemote.style.textAlign = "right";
-  labelRemote.innerText = `${currentCode || "—"}\n#${peerNum}\nE:AWAITING`;
+  labelRemote.innerText = `${currentCode || "—"}\n${roleLabel(peerNum)}\nE:AWAITING`;
 
   canvasStatus("E:AWAITING_PEER");
 
@@ -1097,7 +1099,7 @@ function setupDataChannel(channel) {
       if (msg.type === "remote_claim") handleRemoteClaim(msg);
 
       /* chat */
-      if (msg.type === "chat") appendChat(msg.text, "them");
+      if (msg.type === "chat") appendChat(msg.text, "them", myUserNumber ? (3 - myUserNumber) : 2);
 
       /* peer's face bbox from server — draw box and update corner label */
       if (msg.type === "face_box") {
@@ -1110,7 +1112,7 @@ function setupDataChannel(channel) {
         labelRemote.style.left   = "auto";
         labelRemote.style.top    = "auto";
         labelRemote.style.textAlign = "right";
-        labelRemote.innerText = `${currentCode || "—"}\n#${peerNum}`;
+        labelRemote.innerText = `${currentCode || "—"}\n${roleLabel(peerNum)}`;
       }
 
       /* global ui state sync */
@@ -1386,10 +1388,14 @@ filePicker.addEventListener("change", async () => {
    CHAT
    ===================================================================== */
 
-function appendChat(text, who) {
+function appendChat(text, who, senderNum) {
   const div = document.createElement("div");
   div.className = "chat-msg " + who;
-  div.innerText = text;
+  const label = document.createElement("span");
+  label.style.cssText = "display:block;font-size:9px;letter-spacing:2px;opacity:0.45;margin-bottom:2px;";
+  label.innerText = roleLabel(senderNum);
+  div.appendChild(label);
+  div.appendChild(document.createTextNode(text));
   chatLog.appendChild(div);
   chatLog.scrollTop = chatLog.scrollHeight;
 }
@@ -1398,7 +1404,7 @@ function sendChat() {
   const text = chatInput.value.trim();
   if (!text) return;
   chatInput.value = "";
-  appendChat(text, "me");
+  appendChat(text, "me", myUserNumber);
   sendDataMsg({ type: "chat", text });
 }
 
@@ -1509,11 +1515,12 @@ document.addEventListener("keydown", (e) => {
     rescueIdentity();
   }
 
-  /* Cmd+G / Ctrl+G — enroll guest */
+  /* Cmd+G / Ctrl+G — initiator: validate identity / guest: enroll face */
   if ((e.metaKey || e.ctrlKey) && e.key === "g") {
     if (typing) return;
     e.preventDefault();
-    enrollGuest();
+    if (myUserNumber === 1) rescueIdentity();
+    else enrollGuest();
   }
 
   /* Cmd+R / Ctrl+R — disconnect */
