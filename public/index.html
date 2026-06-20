@@ -433,7 +433,8 @@ button {
     <div class="help-row"><span class="help-key">⌘D</span><span class="help-desc">TOGGLE CAMERA</span></div>
     <div class="help-row"><span class="help-key">⌘V</span><span class="help-desc">MINIMISE VIDEO</span></div>
     <div class="help-row"><span class="help-key">⌘C</span><span class="help-desc">MAXIMISE CHAT</span></div>
-    <div class="help-row"><span class="help-key">⌘T</span><span class="help-desc">REMOTE CONTROL</span></div>
+    <div class="help-row"><span class="help-key">⌘S</span><span class="help-desc">REMOTE CONTROL</span></div>
+    <div class="help-row"><span class="help-key">⌘I</span><span class="help-desc">RESCAN IDENTITY</span></div>
     <div class="help-row"><span class="help-key">⌘R</span><span class="help-desc">DISCONNECT</span></div>
   </div>
 </div>
@@ -475,7 +476,7 @@ const socket = io();
 let pc, dataChannel, receiveChannel, localStream, currentCode;
 
 /* ---- pre-warm face service on page load so cold-start doesn't hit during join ---- */
-fetch("/face/detect", { method: "POST", headers: { "Content-Type": "application/json" },
+fetch("/face/identify", { method: "POST", headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ image_b64: "" }) }).catch(() => {});
 
 let videoX = 0, videoY = 0, videoScale = 1;
@@ -570,8 +571,8 @@ function drawPeerFaceBox(normBox) {
   const ph = normBox.h * vh * scale;
 
   const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
-  const line1   = currentCode || "—";
-  const line2   = `#${peerNum}`;
+  const line1   = normBox.key ? normBox.key : (currentCode || "—");
+  const line2   = normBox.key ? `✓ identified` : `#${peerNum}`;
 
   const BRG = "#004225";
 
@@ -628,7 +629,7 @@ async function detectLocalFace() {
     _faceCapCtx.drawImage(localVideo, 0, 0, DETECT_W, DETECT_H);
     const image_b64 = _faceCapCanvas.toDataURL("image/jpeg", 0.7);
 
-    const res  = await fetch("/face/detect", {
+    const res  = await fetch("/face/identify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ image_b64 }),
@@ -639,9 +640,10 @@ async function detectLocalFace() {
 
     if (data.faces && data.faces.length > 0) {
       localInfo = { detected: true };
-      const box = data.faces[0];
-      sendDataMsg({ type: "face_box", box });
-      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}`;
+      const face = data.faces[0];
+      sendDataMsg({ type: "face_box", box: face });
+      const matchedKey = face.key || null;
+      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}${matchedKey ? "\n✓ " + matchedKey : ""}`;
     } else {
       localInfo = null;
       labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\nE:NO_FACE`;
@@ -915,6 +917,50 @@ socket.on("full", () => {
 socket.on("peer_left", () => { location.reload(); });
 socket.on("face_warning",  () => { setPeerStatus("mismatch"); });
 socket.on("face_verified", () => { setPeerStatus("verified"); });
+
+async function rescueIdentity() {
+  if (!localStream || !currentCode) return;
+  document.getElementById("status").innerText = "rescanning...";
+  try {
+    const canvas = document.createElement("canvas");
+    const videoTrack = localStream.getVideoTracks()[0];
+    const capture = new ImageCapture(videoTrack);
+    const bitmap = await capture.grabFrame();
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0);
+    const image_b64 = canvas.toDataURL("image/jpeg", 0.8);
+
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 6000);
+    const res = await fetch("/face/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portal_key: currentCode, image_b64 }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timeout);
+    const data = await res.json();
+
+    let result = socket._faceResult;
+    if (data.reason === "no_enrollment") {
+      result = "no_enrollment";
+    } else if (data.match === false) {
+      result = "mismatch";
+    } else if (data.match === true) {
+      result = "verified";
+    }
+    socket._faceResult = result;
+    socket._faceWarning = result === "mismatch";
+    setConnectionStatus(result);
+
+    if (result === "mismatch")  socket.emit("face_warning",  currentCode);
+    if (result === "verified")  socket.emit("face_verified", currentCode);
+  } catch (e) {
+    document.getElementById("status").innerText = "rescan failed";
+    setTimeout(() => setConnectionStatus(socket._faceResult), 2000);
+  }
+}
 
 function setConnectionStatus(result) {
   const el = document.getElementById("status");
@@ -1399,11 +1445,18 @@ document.addEventListener("keydown", (e) => {
     toggleVideo();
   }
 
-  /* Cmd+T / Ctrl+T — toggle remote control */
-  if ((e.metaKey || e.ctrlKey) && e.key === "t") {
+  /* Cmd+S / Ctrl+S — toggle remote control */
+  if ((e.metaKey || e.ctrlKey) && e.key === "s") {
     if (typing) return;
     e.preventDefault();
     toggleRemoteControl();
+  }
+
+  /* Cmd+I / Ctrl+I — rescan identity */
+  if ((e.metaKey || e.ctrlKey) && e.key === "i") {
+    if (typing) return;
+    e.preventDefault();
+    rescueIdentity();
   }
 
   /* Cmd+R / Ctrl+R — disconnect */

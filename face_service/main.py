@@ -1,7 +1,6 @@
 """
 Portal Face Recognition Service
-Stack: OpenCV Haar cascade (detection) + MobileFaceNet ONNX (embeddings)
-No large ML frameworks — ~150MB peak RAM.
+Stack: YuNet DNN detector + MobileFaceNet ONNX embeddings
 """
 
 import os
@@ -30,28 +29,34 @@ _data_dir = os.path.dirname(DATA_FILE)
 if _data_dir:
     os.makedirs(_data_dir, exist_ok=True)
 
+MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
+
 # ---------------------------------------------------------------------------
-# Models — loaded once at startup
+# Models
 # ---------------------------------------------------------------------------
 
-# Face detection: Haar cascade bundled with OpenCV, zero download
-_cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
-
-# Face recognition: MobileFaceNet ONNX (~17MB), downloaded at build time
-_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "w600k_mbf.onnx")
-_rec_session: ort.InferenceSession | None = None
-
-if os.path.exists(_MODEL_PATH):
-    _rec_session = ort.InferenceSession(
-        _MODEL_PATH, providers=["CPUExecutionProvider"]
+# YuNet face detector — much more robust than Haar cascade
+_DET_MODEL = os.path.join(MODELS_DIR, "face_detection_yunet.onnx")
+_detector: cv2.FaceDetectorYN | None = None
+if os.path.exists(_DET_MODEL):
+    _detector = cv2.FaceDetectorYN.create(
+        _DET_MODEL, "", (320, 240),
+        score_threshold=0.6, nms_threshold=0.3, top_k=5000
     )
-    print(f"Recognition model loaded: {_MODEL_PATH}")
+    print(f"YuNet detector loaded: {_DET_MODEL}")
 else:
-    print(f"WARNING: recognition model not found at {_MODEL_PATH}. "
-          f"Enroll/verify will be unavailable.")
+    print(f"WARNING: detector model not found at {_DET_MODEL}")
 
+# MobileFaceNet recognition model
+_REC_MODEL = os.path.join(MODELS_DIR, "w600k_mbf.onnx")
+_rec_session: ort.InferenceSession | None = None
+if os.path.exists(_REC_MODEL):
+    _rec_session = ort.InferenceSession(_REC_MODEL, providers=["CPUExecutionProvider"])
+    print(f"Recognition model loaded: {_REC_MODEL}")
+else:
+    print(f"WARNING: recognition model not found at {_REC_MODEL}")
+
+MATCH_THRESHOLD = 0.40  # cosine similarity threshold for a positive match
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -72,44 +77,60 @@ def save_encodings(data: dict):
 
 
 def decode_image_bgr(image_b64: str) -> np.ndarray:
-    """Decode base64 image → BGR numpy array."""
     raw = base64.b64decode(image_b64.split(",")[-1])
     img = Image.open(io.BytesIO(raw)).convert("RGB")
     arr = np.array(img)
     return arr[:, :, ::-1]  # RGB → BGR
 
 
-def detect_faces(img_bgr: np.ndarray):
-    """Return list of (x, y, w, h) face bounding boxes."""
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    faces = _cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(48, 48))
-    return faces if len(faces) > 0 else []
+def detect_faces(img_bgr: np.ndarray) -> list[tuple[int, int, int, int]]:
+    """Return list of (x, y, w, h) face boxes using YuNet."""
+    if _detector is None:
+        return []
+    h, w = img_bgr.shape[:2]
+    _detector.setInputSize((w, h))
+    _, faces = _detector.detect(img_bgr)
+    if faces is None:
+        return []
+    boxes = []
+    for f in faces:
+        x, y, fw, fh = int(f[0]), int(f[1]), int(f[2]), int(f[3])
+        # clamp to image bounds
+        x, y = max(0, x), max(0, y)
+        fw = min(fw, w - x)
+        fh = min(fh, h - y)
+        if fw > 0 and fh > 0:
+            boxes.append((x, y, fw, fh))
+    return boxes
 
 
-def get_embedding(img_bgr: np.ndarray, box) -> np.ndarray:
-    """
-    Crop the face, resize to 112×112, run through MobileFaceNet.
-    Returns L2-normalised 512-dim embedding.
-    """
+def get_embedding(img_bgr: np.ndarray, box: tuple[int, int, int, int]) -> np.ndarray | None:
+    """Crop face, resize to 112×112, return L2-normalised embedding."""
     if _rec_session is None:
-        raise HTTPException(status_code=503, detail="Recognition model not loaded")
-
+        return None
     x, y, w, h = box
     face = img_bgr[y:y+h, x:x+w]
+    if face.size == 0:
+        return None
     face = cv2.resize(face, (112, 112))
-    # Normalise to [-1, 1] — standard for ArcFace/MobileFaceNet
     face = (face.astype(np.float32) - 127.5) / 127.5
-    face = face.transpose(2, 0, 1)          # HWC → CHW
-    face = np.expand_dims(face, axis=0)     # add batch dim
-
-    input_name = _rec_session.get_inputs()[0].name
-    emb = _rec_session.run(None, {input_name: face})[0][0]
-
-    # L2 normalise
+    face = face.transpose(2, 0, 1)[np.newaxis]
+    emb = _rec_session.run(None, {_rec_session.get_inputs()[0].name: face})[0][0]
     norm = np.linalg.norm(emb)
-    if norm > 0:
-        emb = emb / norm
-    return emb
+    return emb / norm if norm > 0 else emb
+
+
+def best_match(emb: np.ndarray, data: dict) -> tuple[str | None, float]:
+    """Compare embedding against all enrolled keys. Returns (key, confidence)."""
+    best_key, best_sim = None, 0.0
+    for k, stored in data.items():
+        sim = float(np.dot(np.array(stored), emb))
+        if sim > best_sim:
+            best_sim = sim
+            best_key = k
+    if best_sim >= MATCH_THRESHOLD:
+        return best_key, round(best_sim, 3)
+    return None, round(best_sim, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -138,15 +159,16 @@ def enroll(req: EnrollRequest):
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
     faces = detect_faces(img)
-    if len(faces) == 0:
+    if not faces:
         raise HTTPException(status_code=422, detail="No face detected in image")
 
-    # Use the largest face
     box = max(faces, key=lambda b: b[2] * b[3])
     emb = get_embedding(img, box)
+    if emb is None:
+        raise HTTPException(status_code=503, detail="Recognition model not loaded")
 
     data = load_encodings()
-    data[req.portal_key] = emb.tolist()
+    data[req.portal_key.strip().upper()] = emb.tolist()
     save_encodings(data)
     return {"status": "enrolled", "portal_key": req.portal_key}
 
@@ -154,7 +176,8 @@ def enroll(req: EnrollRequest):
 @app.post("/verify")
 def verify(req: VerifyRequest):
     data = load_encodings()
-    if req.portal_key not in data:
+    key = req.portal_key.strip().upper()
+    if key not in data:
         return {"match": True, "reason": "no_enrollment", "confidence": 1.0}
 
     try:
@@ -163,22 +186,50 @@ def verify(req: VerifyRequest):
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
     faces = detect_faces(img)
-    if len(faces) == 0:
+    if not faces:
         return {"match": False, "reason": "no_face_detected", "confidence": 0.0}
 
     box = max(faces, key=lambda b: b[2] * b[3])
-    live = get_embedding(img, box)
-    known = np.array(data[req.portal_key])
+    emb = get_embedding(img, box)
+    if emb is None:
+        return {"match": False, "reason": "model_unavailable", "confidence": 0.0}
 
-    cos_sim = float(np.dot(known, live))  # both are L2-normalised
-    confidence = round(max(0.0, cos_sim), 3)
-    match = cos_sim > 0.4
-
+    cos_sim = float(np.dot(np.array(data[key]), emb))
+    match = cos_sim >= MATCH_THRESHOLD
     return {
         "match": match,
-        "confidence": confidence,
+        "confidence": round(max(0.0, cos_sim), 3),
         "reason": "ok" if match else "face_mismatch",
     }
+
+
+@app.post("/identify")
+def identify(req: DetectRequest):
+    """Detect all faces and match each against enrolled keys."""
+    try:
+        img = decode_image_bgr(req.image_b64)
+        h, w = img.shape[:2]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+
+    faces = detect_faces(img)
+    data = load_encodings()
+    results = []
+
+    for box in faces:
+        x, y, fw, fh = box
+        entry = {
+            "x": x / w, "y": y / h, "w": fw / w, "h": fh / h,
+            "key": None, "confidence": 0.0,
+        }
+        emb = get_embedding(img, box)
+        if emb is not None and data:
+            matched_key, confidence = best_match(emb, data)
+            entry["key"] = matched_key
+            entry["confidence"] = confidence
+        results.append(entry)
+
+    return {"faces": results}
 
 
 @app.post("/detect")
@@ -190,15 +241,8 @@ def detect(req: DetectRequest):
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
     faces = detect_faces(img)
-    boxes = []
-    for (x, y, fw, fh) in faces:
-        boxes.append({
-            "x": x / w,
-            "y": y / h,
-            "w": fw / w,
-            "h": fh / h,
-        })
-    return {"faces": boxes}
+    return {"faces": [{"x": x/w, "y": y/h, "w": fw/w, "h": fh/h}
+                      for x, y, fw, fh in faces]}
 
 
 @app.delete("/enrolled/{portal_key}")
@@ -220,7 +264,11 @@ def enrolled():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model_ready": _rec_session is not None}
+    return {
+        "status": "ok",
+        "detector": _detector is not None,
+        "recognizer": _rec_session is not None,
+    }
 
 
 if __name__ == "__main__":
