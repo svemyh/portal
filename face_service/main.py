@@ -29,6 +29,10 @@ _data_dir = os.path.dirname(DATA_FILE)
 if _data_dir:
     os.makedirs(_data_dir, exist_ok=True)
 
+# Admin keys stored on the same persistent disk so they survive redeploys
+_data_base = _data_dir or "face_data"
+ADMIN_KEYS_FILE = os.path.join(_data_base, "admin-keys.json")
+
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 
 # ---------------------------------------------------------------------------
@@ -74,6 +78,22 @@ def save_encodings(data: dict):
         os.makedirs(_data_dir, exist_ok=True)
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
+
+
+def load_admin_keys() -> list:
+    try:
+        if os.path.exists(ADMIN_KEYS_FILE):
+            with open(ADMIN_KEYS_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+
+def save_admin_keys(keys: list):
+    os.makedirs(os.path.dirname(ADMIN_KEYS_FILE), exist_ok=True)
+    with open(ADMIN_KEYS_FILE, "w") as f:
+        json.dump(keys, f)
 
 
 def decode_image_bgr(image_b64: str) -> np.ndarray:
@@ -224,6 +244,8 @@ def verify(req: VerifyRequest):
 @app.post("/identify")
 def identify(req: DetectRequest):
     """Detect all faces and match each against enrolled keys."""
+    if not req.image_b64:
+        return {"faces": []}
     try:
         img = decode_image_bgr(req.image_b64)
         h, w = img.shape[:2]
@@ -254,6 +276,8 @@ def identify(req: DetectRequest):
 
 @app.post("/detect")
 def detect(req: DetectRequest):
+    if not req.image_b64:
+        return {"faces": []}
     try:
         img = decode_image_bgr(req.image_b64)
         h, w = img.shape[:2]
@@ -304,6 +328,33 @@ def enroll_guest(req: EnrollRequest):
 def enrolled():
     data = load_encodings()
     return {"count": len(data), "keys": list(data.keys())}
+
+
+class AdminKeyRequest(BaseModel):
+    key: str
+
+
+@app.get("/admin-keys")
+def get_admin_keys():
+    return {"keys": load_admin_keys()}
+
+
+@app.post("/admin-keys")
+def add_admin_key(req: AdminKeyRequest):
+    keys = load_admin_keys()
+    k = req.key.strip().upper()
+    if k and k not in keys:
+        keys.append(k)
+        save_admin_keys(keys)
+    return {"keys": keys}
+
+
+@app.delete("/admin-keys/{key}")
+def remove_admin_key(key: str):
+    keys = load_admin_keys()
+    keys = [k for k in keys if k != key.strip().upper()]
+    save_admin_keys(keys)
+    return {"keys": keys}
 
 
 @app.get("/health")

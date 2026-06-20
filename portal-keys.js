@@ -135,31 +135,35 @@ const pendingSessions = new Map();
 
 const adminKeys = new Set();
 
-/* File-based key persistence — survives restarts, lost only on full redeploy */
-const KEYS_FILE = process.env.ADMIN_KEYS_FILE || path.join(__dirname, "data", "admin-keys.json");
+/* Persist admin keys to face service disk — survives all restarts AND redeploys */
+const FACE_URL = () => process.env.FACE_SERVICE_URL || "http://localhost:8000";
 
-function loadPersistedKeys() {
+async function loadKeysFromFaceService() {
   try {
-    if (fs.existsSync(KEYS_FILE)) {
-      const keys = JSON.parse(fs.readFileSync(KEYS_FILE, "utf8"));
-      keys.forEach(k => adminKeys.add(k));
-      console.log(`Loaded ${keys.length} persisted admin keys`);
-    }
+    const r = await fetch(`${FACE_URL()}/admin-keys`);
+    if (!r.ok) return;
+    const { keys } = await r.json();
+    keys.forEach(k => adminKeys.add(k));
+    console.log(`Loaded ${keys.length} admin keys from face service`);
   } catch (e) {
-    console.warn("Could not load persisted admin keys:", e.message);
+    console.warn("Could not load admin keys from face service (will retry on next key use):", e.message);
   }
 }
 
-function persistKeys() {
+async function syncKeyToFaceService(key) {
   try {
-    fs.mkdirSync(path.dirname(KEYS_FILE), { recursive: true });
-    fs.writeFileSync(KEYS_FILE, JSON.stringify([...adminKeys]));
+    await fetch(`${FACE_URL()}/admin-keys`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    });
   } catch (e) {
-    console.warn("Could not persist admin keys:", e.message);
+    console.warn("Could not sync admin key to face service:", e.message);
   }
 }
 
-loadPersistedKeys();
+// Load on startup (face service may not be ready yet — that's fine, keys in ADMIN_KEYS env still work)
+loadKeysFromFaceService();
 
 /* Load permanent gifted keys from env on startup
    ADMIN_KEYS=KEY1,KEY2,KEY3 in your .env               */
@@ -241,7 +245,7 @@ function init(app) {
 
     const key = generateAdminKey();
     adminKeys.add(key);
-    persistKeys();
+    syncKeyToFaceService(key); // persist to face service disk — survives redeploys
     console.log(`Admin key generated: ${key} (total admin keys: ${adminKeys.size})`);
     res.json({ portalKey: key });
   });

@@ -188,11 +188,7 @@ let capturedB64   = null;
 let stream        = null;
 
 /* pre-warm face service so it's ready when we enroll */
-fetch("/face/detect", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ image_b64: "" }),
-}).catch(() => {});
+fetch("/face/health").catch(() => {});
 
 const camPreview    = document.getElementById("camPreview");
 const photoPreview  = document.getElementById("photoPreview");

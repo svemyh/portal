@@ -477,8 +477,7 @@ const socket = io();
 let pc, dataChannel, receiveChannel, localStream, currentCode;
 
 /* ---- pre-warm face service on page load so cold-start doesn't hit during join ---- */
-fetch("/face/identify", { method: "POST", headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ image_b64: "" }) }).catch(() => {});
+fetch("/face/health").catch(() => {});
 
 let videoX = 0, videoY = 0, videoScale = 1;
 let videoMinimized = false;

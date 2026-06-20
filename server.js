@@ -74,6 +74,15 @@ app.post("/face/verify",        (req, res) => faceProxy("/verify",       req.bod
 app.post("/face/detect",        (req, res) => faceProxy("/detect",        req.body, res));
 app.post("/face/identify",      (req, res) => faceProxy("/identify",      req.body, res));
 app.post("/face/enroll-guest",  (req, res) => faceProxy("/enroll-guest",  req.body, res));
+app.get("/face/health", async (req, res) => {
+  try {
+    const r = await fetch(`${FACE_SERVICE_URL}/health`);
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(503).json({ status: "unavailable" });
+  }
+});
 
 /* DELETE /admin/enrollments/:key — remove a private key's face enrollment */
 app.delete("/admin/enrollments/:key", async (req, res) => {
