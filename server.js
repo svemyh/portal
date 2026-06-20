@@ -152,17 +152,18 @@ io.on("connection", (socket) => {
   socket.on("join", async (code) => {
     code = code.trim();
 
-    /* Validate key on-chain if enabled */
-    if (portalKeys) {
+    if (!rooms[code]) rooms[code] = { users: [] };
+    const room = rooms[code];
+
+    /* Only the initiator (first to join) must hold a valid key.
+       The guest (second) just needs to know the code. */
+    if (room.users.length === 0 && portalKeys) {
       const valid = await portalKeys.validateKey(code);
       if (!valid) {
         socket.emit("invalid_key");
         return;
       }
     }
-
-    if (!rooms[code]) rooms[code] = { users: [] };
-    const room = rooms[code];
 
     if (room.users.length >= 2) {
       socket.emit("full");
