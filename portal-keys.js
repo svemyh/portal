@@ -192,14 +192,21 @@ async function validateKey(code) {
   if (adminKeys.has(code)) return true;
 
   /* Startup load may have failed if face service wasn't ready yet — retry once */
+  const faceUrl = FACE_URL();
+  console.log(`validateKey: "${code}" not in memory (${adminKeys.size} keys loaded), fetching from ${faceUrl}/admin-keys`);
   try {
-    const r = await fetch(`${FACE_URL()}/admin-keys`);
+    const r = await fetch(`${faceUrl}/admin-keys`);
     if (r.ok) {
       const { keys } = await r.json();
       keys.forEach(k => adminKeys.add(k));
+      console.log(`validateKey: loaded ${keys.length} keys from face service: [${keys.join(", ")}]`);
       if (adminKeys.has(code)) return true;
+    } else {
+      console.warn(`validateKey: face service /admin-keys returned ${r.status}`);
     }
-  } catch { /* face service unavailable — continue */ }
+  } catch (e) {
+    console.warn(`validateKey: face service unreachable — ${e.message}`);
+  }
 
   /* Contract not yet deployed — only admin keys are valid */
   if (!PROGRAM_ID) return false;
