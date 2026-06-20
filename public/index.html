@@ -492,7 +492,7 @@ let mySocketId   = null;
 socket.on("connect", () => { mySocketId = socket.id; });
 socket.on("assigned", ({ userNumber }) => { myUserNumber = userNumber; });
 
-function roleLabel(num) { return num === 1 ? "#portal key" : "#portal key - guest"; }
+function roleLabel(num) { const k = currentCode || "—"; return num === 1 ? `#${k}` : `#${k}-G`; }
 
 /* ---- elements ---- */
 const remoteVideo  = document.getElementById("remote");
@@ -950,11 +950,12 @@ async function enrollGuest() {
     });
     const data = await res.json();
     if (res.ok) {
+      socket._faceResult = "verified";
       statusEl.innerText = `guest enrolled (${data.guest_slot})`;
       statusEl.style.color = "#00ff88";
       setTimeout(() => {
         statusEl.style.color = "";
-        setConnectionStatus(socket._faceResult);
+        setConnectionStatus("verified");
       }, 3000);
     } else {
       statusEl.innerText = data.detail || data.error || "guest enrollment failed";
