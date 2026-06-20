@@ -16,6 +16,8 @@ services:
         sync: false
       - key: TREASURY_PUBKEY
         sync: false
+      - key: ADMIN_KEY
+        generateValue: true
       - key: ADMIN_SECRET
         generateValue: true
       - key: FACE_SERVICE_URL

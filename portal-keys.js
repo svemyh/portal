@@ -206,7 +206,9 @@ function init(app) {
   app.post("/admin/generate-key", (req, res) => {
     const validSecret = process.env.ADMIN_SECRET && req.headers["x-admin-secret"] === process.env.ADMIN_SECRET;
     const validKey    = process.env.ADMIN_KEY    && req.headers["x-admin-key"]    === process.env.ADMIN_KEY;
-    if (!validSecret && !validKey) {
+    // If neither env var is configured, allow through (dev mode, consistent with rest of server)
+    const authConfigured = !!(process.env.ADMIN_SECRET || process.env.ADMIN_KEY);
+    if (authConfigured && !validSecret && !validKey) {
       return res.status(401).json({ error: "unauthorized" });
     }
 
