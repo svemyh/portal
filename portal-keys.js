@@ -191,6 +191,16 @@ async function validateKey(code) {
   /* Check admin keys first — instant, no RPC call */
   if (adminKeys.has(code)) return true;
 
+  /* Startup load may have failed if face service wasn't ready yet — retry once */
+  try {
+    const r = await fetch(`${FACE_URL()}/admin-keys`);
+    if (r.ok) {
+      const { keys } = await r.json();
+      keys.forEach(k => adminKeys.add(k));
+      if (adminKeys.has(code)) return true;
+    }
+  } catch { /* face service unavailable — continue */ }
+
   /* Contract not yet deployed — only admin keys are valid */
   if (!PROGRAM_ID) return false;
 

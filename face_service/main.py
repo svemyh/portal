@@ -45,7 +45,7 @@ _detector: cv2.FaceDetectorYN | None = None
 if os.path.exists(_DET_MODEL):
     _detector = cv2.FaceDetectorYN.create(
         _DET_MODEL, "", (320, 240),
-        score_threshold=0.6, nms_threshold=0.3, top_k=5000
+        score_threshold=0.45, nms_threshold=0.3, top_k=5000
     )
     print(f"YuNet detector loaded: {_DET_MODEL}")
 else:
