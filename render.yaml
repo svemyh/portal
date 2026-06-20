@@ -38,6 +38,10 @@ services:
     buildCommand: pip install -r requirements.txt && python download_models.py
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
+    disk:
+      name: face-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: FACE_DATA_FILE
-        value: face_data/encodings.json
+        value: /data/encodings.json
