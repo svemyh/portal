@@ -204,8 +204,9 @@ function init(app) {
      Generates a free key at your discretion, no SOL required.
   */
   app.post("/admin/generate-key", (req, res) => {
-    const secret = req.headers["x-admin-secret"];
-    if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
+    const validSecret = process.env.ADMIN_SECRET && req.headers["x-admin-secret"] === process.env.ADMIN_SECRET;
+    const validKey    = process.env.ADMIN_KEY    && req.headers["x-admin-key"]    === process.env.ADMIN_KEY;
+    if (!validSecret && !validKey) {
       return res.status(401).json({ error: "unauthorized" });
     }
 
