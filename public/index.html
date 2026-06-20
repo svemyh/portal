@@ -914,6 +914,14 @@ socket.on("full", () => {
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
 });
 
+socket.on("invalid_key", () => {
+  const statusEl = document.getElementById("status");
+  statusEl.innerText = "invalid portal key";
+  statusEl.style.color = "#ff4444";
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  setTimeout(() => location.reload(), 2500);
+});
+
 socket.on("peer_left", () => { location.reload(); });
 socket.on("face_warning",  () => { setPeerStatus("mismatch"); });
 socket.on("face_verified", () => { setPeerStatus("verified"); });
