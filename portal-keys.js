@@ -39,7 +39,11 @@ const TREASURY      = process.env.TREASURY_PUBKEY ? new PublicKey(process.env.TR
 const KEY_PRICE_LAMPORTS = 100_000_000; // must match lib.rs constant
 
 if (!PROGRAM_ID || !TREASURY) {
-  console.warn("portal-keys: PROGRAM_ID or TREASURY_PUBKEY not set — purchase/validate routes will be no-ops until contract is deployed");
+  console.error(
+    "portal-keys: FATAL — key validation is ENABLED (PORTAL_KEYS_ENABLED=true) but PROGRAM_ID and/or TREASURY_PUBKEY is not set. " +
+    "validateKey() will FAIL CLOSED (reject every non-admin code) until the contract config is provided. " +
+    "Set PROGRAM_ID and TREASURY_PUBKEY, or set PORTAL_KEYS_ENABLED=false for dev mode."
+  );
 }
 
 const connection = new Connection(RPC_URL, "confirmed");
@@ -160,8 +164,13 @@ async function validateKey(code) {
   /* Check admin keys first — instant, no RPC call */
   if (adminKeys.has(code)) return true;
 
-  /* Contract not yet deployed — allow all codes through */
-  if (!PROGRAM_ID) return true;
+  /* Fail CLOSED: validation is enabled (this module only loads when
+     PORTAL_KEYS_ENABLED=true) but the contract config is missing, so we
+     cannot verify on-chain ownership. Reject rather than admit everyone. */
+  if (!PROGRAM_ID || !TREASURY) {
+    console.error("validateKey: rejecting code — PROGRAM_ID/TREASURY_PUBKEY not configured while key validation is enabled");
+    return false;
+  }
 
   try {
     /* Fetch all KeyRecord accounts and look for a matching key */
