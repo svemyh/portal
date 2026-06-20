@@ -335,6 +335,9 @@ async function loadEnrollments() {
       if (!parents[base]) parents[base] = { key: base, chain: "unknown", orphan: true };
     }
 
+    const copyBtn = (key) =>
+      `<button onclick="navigator.clipboard.writeText('${key}')" style="font-size:9px;letter-spacing:1px;padding:2px 7px;border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.45);background:none;cursor:crosshair" onmouseover="this.style.borderColor='white';this.style.color='white'" onmouseout="this.style.borderColor='rgba(255,255,255,0.2)';this.style.color='rgba(255,255,255,0.45)'">⎘</button>`;
+
     const deleteBtn = (rawKey, chain) => chain === "private" || rawKey.includes(":")
       ? `<button onclick="deleteEnrollment('${rawKey}')" style="font-size:9px;letter-spacing:1px;padding:2px 7px;border:1px solid rgba(255,80,80,0.4);color:rgba(255,100,100,0.7);background:none;cursor:crosshair" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444'" onmouseout="this.style.borderColor='rgba(255,80,80,0.4)';this.style.color='rgba(255,100,100,0.7)'">✕</button>`
       : "";
@@ -345,6 +348,7 @@ async function loadEnrollments() {
           <span style="font-size:11px">↳ guest ${i + 1}</span>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="chain-badge ${chain}" style="font-size:9px">guest</span>
+            ${copyBtn(key)}
             ${deleteBtn(g.key, chain)}
           </div>
         </div>`).join("");
@@ -353,6 +357,7 @@ async function loadEnrollments() {
           <span>${key}</span>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="chain-badge ${chain}">${chain}</span>
+            ${copyBtn(key)}
             ${deleteBtn(key, chain)}
           </div>
         </div>${guestRows}`;
