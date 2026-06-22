@@ -267,24 +267,6 @@ function init(app) {
     res.json({ portalKey: key });
   });
 
-  /* POST /admin/revoke-key
-     Header: x-admin-secret: <ADMIN_SECRET>
-     Body: { key: "XXXXXXXX" }
-     Revokes an admin key immediately.
-  */
-  app.post("/admin/revoke-key", (req, res) => {
-    const secret = req.headers["x-admin-secret"];
-    if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
-      return res.status(401).json({ error: "unauthorized" });
-    }
-
-    const { key } = req.body;
-    if (!key) return res.status(400).json({ error: "key required" });
-
-    const removed = adminKeys.delete(key);
-    res.json({ revoked: removed });
-  });
-
   /* GET /admin/list-keys
      Header: x-admin-secret: <ADMIN_SECRET>
      Lists all currently active admin keys.
