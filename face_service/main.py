@@ -1,18 +1,16 @@
 """
 Portal Face Recognition Service
-FastAPI service that handles face enrollment and verification.
+Stack: YuNet DNN detector + MobileFaceNet ONNX embeddings
 """
 
 import os
 import io
 import json
 import base64
-import threading
-import tempfile
-
 import numpy as np
+import cv2
+import onnxruntime as ort
 from PIL import Image
-from deepface import DeepFace
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -26,42 +24,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serialize all DeepFace calls — TensorFlow global state is not thread-safe
-_lock = threading.Lock()
-
-# Face encodings stored as JSON: { "KEY12345": [...128 floats...] }
 DATA_FILE = os.environ.get("FACE_DATA_FILE", "face_data/encodings.json")
-os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
+_data_dir = os.path.dirname(DATA_FILE)
+if _data_dir:
+    os.makedirs(_data_dir, exist_ok=True)
 
+# Admin keys stored on the same persistent disk so they survive redeploys
+_data_base = _data_dir or "face_data"
+ADMIN_KEYS_FILE = os.path.join(_data_base, "admin-keys.json")
+
+MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 
 # ---------------------------------------------------------------------------
-# Model pre-warm — runs once in background after startup so the first real
-# request doesn't pay the cold-start penalty.
-# Uses opencv detector (bundled, no download) for detect, and loads Facenet
-# weights (92 MB) for enroll/verify — all safely serialised behind _lock.
+# Models
 # ---------------------------------------------------------------------------
 
-def _prewarm():
-    with _lock:
-        try:
-            print("Pre-warming DeepFace models...")
-            dummy = np.ones((160, 160, 3), dtype=np.uint8) * 128
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                Image.fromarray(dummy).save(f.name)
-                tmp = f.name
-            try:
-                DeepFace.extract_faces(img_path=tmp, detector_backend="opencv",
-                                       enforce_detection=False, align=False)
-                DeepFace.represent(img_path=tmp, model_name="Facenet",
-                                   enforce_detection=False)
-                print("Models ready.")
-            finally:
-                os.unlink(tmp)
-        except Exception as e:
-            print(f"Pre-warm error (non-fatal): {e}")
+# YuNet face detector — much more robust than Haar cascade
+_DET_MODEL = os.path.join(MODELS_DIR, "face_detection_yunet.onnx")
+_detector: cv2.FaceDetectorYN | None = None
+if os.path.exists(_DET_MODEL):
+    _detector = cv2.FaceDetectorYN.create(
+        _DET_MODEL, "", (320, 240),
+        score_threshold=0.45, nms_threshold=0.3, top_k=5000
+    )
+    print(f"YuNet detector loaded: {_DET_MODEL}")
+else:
+    print(f"WARNING: detector model not found at {_DET_MODEL}")
 
-threading.Thread(target=_prewarm, daemon=True).start()
+# MobileFaceNet recognition model
+_REC_MODEL = os.path.join(MODELS_DIR, "w600k_mbf.onnx")
+_rec_session: ort.InferenceSession | None = None
+if os.path.exists(_REC_MODEL):
+    _rec_session = ort.InferenceSession(_REC_MODEL, providers=["CPUExecutionProvider"])
+    print(f"Recognition model loaded: {_REC_MODEL}")
+else:
+    print(f"WARNING: recognition model not found at {_REC_MODEL}")
 
+MATCH_THRESHOLD = 0.40  # cosine similarity threshold for a positive match
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -75,27 +74,101 @@ def load_encodings() -> dict:
 
 
 def save_encodings(data: dict):
+    if _data_dir:
+        os.makedirs(_data_dir, exist_ok=True)
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
 
-def decode_image(image_b64: str) -> np.ndarray:
-    image_data = base64.b64decode(image_b64.split(",")[-1])
-    image = Image.open(io.BytesIO(image_data)).convert("RGB")
-    return np.array(image)
-
-
-def get_embedding(img_array: np.ndarray) -> list:
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-        Image.fromarray(img_array).save(f.name)
-        tmp_path = f.name
+def load_admin_keys() -> list:
     try:
-        with _lock:
-            result = DeepFace.represent(img_path=tmp_path, model_name="Facenet",
-                                        enforce_detection=True)
-        return result[0]["embedding"]
-    finally:
-        os.unlink(tmp_path)
+        if os.path.exists(ADMIN_KEYS_FILE):
+            with open(ADMIN_KEYS_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+
+def save_admin_keys(keys: list):
+    os.makedirs(os.path.dirname(ADMIN_KEYS_FILE), exist_ok=True)
+    with open(ADMIN_KEYS_FILE, "w") as f:
+        json.dump(keys, f)
+
+
+def decode_image_bgr(image_b64: str) -> np.ndarray:
+    raw = base64.b64decode(image_b64.split(",")[-1])
+    img = Image.open(io.BytesIO(raw)).convert("RGB")
+    arr = np.array(img)
+    return arr[:, :, ::-1]  # RGB → BGR
+
+
+def detect_faces(img_bgr: np.ndarray) -> list[tuple[int, int, int, int]]:
+    """Return list of (x, y, w, h) face boxes using YuNet."""
+    if _detector is None:
+        return []
+    h, w = img_bgr.shape[:2]
+    _detector.setInputSize((w, h))
+    _, faces = _detector.detect(img_bgr)
+    if faces is None:
+        return []
+    boxes = []
+    for f in faces:
+        x, y, fw, fh = int(f[0]), int(f[1]), int(f[2]), int(f[3])
+        # clamp to image bounds
+        x, y = max(0, x), max(0, y)
+        fw = min(fw, w - x)
+        fh = min(fh, h - y)
+        if fw > 0 and fh > 0:
+            boxes.append((x, y, fw, fh))
+    return boxes
+
+
+def get_embedding(img_bgr: np.ndarray, box: tuple[int, int, int, int]) -> np.ndarray | None:
+    """Crop face, resize to 112×112, return L2-normalised embedding."""
+    if _rec_session is None:
+        return None
+    x, y, w, h = box
+    face = img_bgr[y:y+h, x:x+w]
+    if face.size == 0:
+        return None
+    face = cv2.resize(face, (112, 112))
+    face = (face.astype(np.float32) - 127.5) / 127.5
+    face = face.transpose(2, 0, 1)[np.newaxis]
+    emb = _rec_session.run(None, {_rec_session.get_inputs()[0].name: face})[0][0]
+    norm = np.linalg.norm(emb)
+    return emb / norm if norm > 0 else emb
+
+
+def base_key(k: str) -> str:
+    """Strip guest suffix — 'ABCD1234:g2' → 'ABCD1234'."""
+    return k.split(":")[0]
+
+
+def is_guest_key(k: str) -> bool:
+    return ":" in k
+
+
+def next_guest_slot(portal_key: str, data: dict) -> str:
+    """Return the next unused guest slot for a key, e.g. 'ABCD1234:g1'."""
+    base = portal_key.strip().upper()
+    i = 1
+    while f"{base}:g{i}" in data:
+        i += 1
+    return f"{base}:g{i}"
+
+
+def best_match(emb: np.ndarray, data: dict) -> tuple[str | None, float]:
+    """Compare embedding against all enrolled keys. Returns (raw_key, confidence)."""
+    best_key, best_sim = None, 0.0
+    for k, stored in data.items():
+        sim = float(np.dot(np.array(stored), emb))
+        if sim > best_sim:
+            best_sim = sim
+            best_key = k
+    if best_sim >= MATCH_THRESHOLD:
+        return best_key, round(best_sim, 3)
+    return None, round(best_sim, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -119,17 +192,21 @@ class DetectRequest(BaseModel):
 @app.post("/enroll")
 def enroll(req: EnrollRequest):
     try:
-        image = decode_image(req.image_b64)
+        img = decode_image_bgr(req.image_b64)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
-    try:
-        embedding = get_embedding(image)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"No face detected: {e}")
+    faces = detect_faces(img)
+    if not faces:
+        raise HTTPException(status_code=422, detail="No face detected in image")
+
+    box = max(faces, key=lambda b: b[2] * b[3])
+    emb = get_embedding(img, box)
+    if emb is None:
+        raise HTTPException(status_code=503, detail="Recognition model not loaded")
 
     data = load_encodings()
-    data[req.portal_key] = embedding
+    data[req.portal_key.strip().upper()] = emb.tolist()
     save_encodings(data)
     return {"status": "enrolled", "portal_key": req.portal_key}
 
@@ -137,64 +214,156 @@ def enroll(req: EnrollRequest):
 @app.post("/verify")
 def verify(req: VerifyRequest):
     data = load_encodings()
-    if req.portal_key not in data:
+    key = req.portal_key.strip().upper()
+    if key not in data:
         return {"match": True, "reason": "no_enrollment", "confidence": 1.0}
 
     try:
-        image = decode_image(req.image_b64)
+        img = decode_image_bgr(req.image_b64)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
-    try:
-        live = np.array(get_embedding(image))
-    except Exception:
+    faces = detect_faces(img)
+    if not faces:
         return {"match": False, "reason": "no_face_detected", "confidence": 0.0}
 
-    stored = np.array(data[req.portal_key])
-    cos_sim = float(np.dot(stored, live) / (np.linalg.norm(stored) * np.linalg.norm(live)))
-    confidence = round(cos_sim, 3)
-    match = cos_sim > 0.7
+    box = max(faces, key=lambda b: b[2] * b[3])
+    emb = get_embedding(img, box)
+    if emb is None:
+        return {"match": False, "reason": "model_unavailable", "confidence": 0.0}
 
-    return {"match": match, "confidence": confidence,
-            "reason": "ok" if match else "face_mismatch"}
+    cos_sim = float(np.dot(np.array(data[key]), emb))
+    match = cos_sim >= MATCH_THRESHOLD
+    return {
+        "match": match,
+        "confidence": round(max(0.0, cos_sim), 3),
+        "reason": "ok" if match else "face_mismatch",
+    }
 
 
-@app.post("/detect")
-def detect(req: DetectRequest):
+@app.post("/identify")
+def identify(req: DetectRequest):
+    """Detect all faces and match each against enrolled keys."""
+    if not req.image_b64:
+        return {"faces": []}
     try:
-        img = decode_image(req.image_b64)
+        img = decode_image_bgr(req.image_b64)
         h, w = img.shape[:2]
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            Image.fromarray(img).save(f.name)
-            tmp_path = f.name
-        with _lock:
-            faces = DeepFace.extract_faces(img_path=tmp_path,
-                                           detector_backend="opencv",
-                                           enforce_detection=True,
-                                           align=False)
-        os.unlink(tmp_path)
+    faces = detect_faces(img)
+    data = load_encodings()
+    results = []
 
-        boxes = []
-        for face in faces:
-            fa = face["facial_area"]
-            boxes.append({
-                "x": fa["x"] / w,
-                "y": fa["y"] / h,
-                "w": fa["w"] / w,
-                "h": fa["h"] / h,
-            })
-        return {"faces": boxes}
-    except Exception:
+    for box in faces:
+        x, y, fw, fh = box
+        entry = {
+            "x": x / w, "y": y / h, "w": fw / w, "h": fh / h,
+            "key": None, "is_guest": False, "confidence": 0.0,
+        }
+        emb = get_embedding(img, box)
+        if emb is not None and data:
+            raw_key, confidence = best_match(emb, data)
+            if raw_key:
+                entry["key"] = base_key(raw_key)
+                entry["is_guest"] = is_guest_key(raw_key)
+            entry["confidence"] = confidence
+        results.append(entry)
+
+    return {"faces": results}
+
+
+@app.post("/detect")
+def detect(req: DetectRequest):
+    if not req.image_b64:
         return {"faces": []}
+    try:
+        img = decode_image_bgr(req.image_b64)
+        h, w = img.shape[:2]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+
+    faces = detect_faces(img)
+    return {"faces": [{"x": x/w, "y": y/h, "w": fw/w, "h": fh/h}
+                      for x, y, fw, fh in faces]}
+
+
+@app.delete("/enrolled/{portal_key}")
+def delete_enrolled(portal_key: str):
+    data = load_encodings()
+    key = portal_key.strip().upper()
+    if key not in data:
+        raise HTTPException(status_code=404, detail="Key not enrolled")
+    del data[key]
+    save_encodings(data)
+    return {"status": "deleted", "portal_key": key}
+
+
+@app.post("/enroll-guest")
+def enroll_guest(req: EnrollRequest):
+    """Enroll a guest face under the keyholder's portal key (KEY:g1, KEY:g2, …)."""
+    try:
+        img = decode_image_bgr(req.image_b64)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
+
+    faces = detect_faces(img)
+    if not faces:
+        raise HTTPException(status_code=422, detail="No face detected in image")
+
+    box = max(faces, key=lambda b: b[2] * b[3])
+    emb = get_embedding(img, box)
+    if emb is None:
+        raise HTTPException(status_code=503, detail="Recognition model not loaded")
+
+    data = load_encodings()
+    slot = next_guest_slot(req.portal_key, data)
+    data[slot] = emb.tolist()
+    save_encodings(data)
+    return {"status": "enrolled", "portal_key": req.portal_key, "guest_slot": slot}
+
+
+@app.get("/enrolled")
+def enrolled():
+    data = load_encodings()
+    return {"count": len(data), "keys": list(data.keys())}
+
+
+class AdminKeyRequest(BaseModel):
+    key: str
+
+
+@app.get("/admin-keys")
+def get_admin_keys():
+    return {"keys": load_admin_keys()}
+
+
+@app.post("/admin-keys")
+def add_admin_key(req: AdminKeyRequest):
+    keys = load_admin_keys()
+    k = req.key.strip().upper()
+    if k and k not in keys:
+        keys.append(k)
+        save_admin_keys(keys)
+    return {"keys": keys}
+
+
+@app.delete("/admin-keys/{key}")
+def remove_admin_key(key: str):
+    keys = load_admin_keys()
+    keys = [k for k in keys if k != key.strip().upper()]
+    save_admin_keys(keys)
+    return {"keys": keys}
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "detector": _detector is not None,
+        "recognizer": _rec_session is not None,
+    }
 
 
 if __name__ == "__main__":
