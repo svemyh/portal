@@ -16,8 +16,12 @@ services:
         sync: false
       - key: TREASURY_PUBKEY
         sync: false
+      - key: ADMIN_KEY
+        generateValue: true
       - key: ADMIN_SECRET
         generateValue: true
+      - key: ADMIN_KEYS
+        sync: false       # comma-separated list of permanent portal keys (survive redeploys)
       - key: FACE_SERVICE_URL
         sync: false       # set to the face service URL after it deploys
       - key: TURN_URL_UDP
@@ -33,17 +37,15 @@ services:
   - type: web
     name: portal-face
     runtime: python
-    plan: free
+    plan: starter
     rootDir: face_service
-    buildCommand: >
-      pip install -r requirements.txt &&
-      mkdir -p ~/.deepface/weights &&
-      wget -q -O ~/.deepface/weights/facenet_weights.h5
-      https://github.com/serengil/deepface_models/releases/download/v1.0/facenet_weights.h5
-    startCommand: python main.py
+    buildCommand: pip install -r requirements.txt && python download_models.py
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
+    disk:
+      name: face-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: FACE_DATA_FILE
-        value: face_data/encodings.json
-      - key: WEB_CONCURRENCY
-        value: "1"
+        value: /data/encodings.json
