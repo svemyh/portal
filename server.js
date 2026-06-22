@@ -70,8 +70,83 @@ app.post("/face/enroll", (req, res) => {
   }
   faceProxy("/enroll", req.body, res);
 });
-app.post("/face/verify",  (req, res) => faceProxy("/verify",  req.body, res));
-app.post("/face/detect",  (req, res) => faceProxy("/detect",  req.body, res));
+app.post("/face/verify",        (req, res) => faceProxy("/verify",       req.body, res));
+app.post("/face/detect",        (req, res) => faceProxy("/detect",        req.body, res));
+app.post("/face/identify",      (req, res) => faceProxy("/identify",      req.body, res));
+app.post("/face/enroll-guest",  (req, res) => faceProxy("/enroll-guest",  req.body, res));
+app.get("/face/health", async (req, res) => {
+  try {
+    const r = await fetch(`${FACE_SERVICE_URL}/health`);
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(503).json({ status: "unavailable" });
+  }
+});
+
+/* POST /admin/revoke-key — remove a key from memory + disk without needing its enrollment */
+app.post("/admin/revoke-key", async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const { key } = req.body;
+  if (!key) return res.status(400).json({ error: "key required" });
+  if (portalKeys) await portalKeys.revokeKey(key);
+  res.json({ revoked: true, key: key.trim().toUpperCase() });
+});
+
+/* DELETE /admin/enrollments/:key — remove a private key's face enrollment */
+app.delete("/admin/enrollments/:key", async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const key = req.params.key.trim().toUpperCase();
+  // Only allow deleting private (non-chain) keys
+  if (portalKeys && process.env.PROGRAM_ID && !portalKeys.isAdminKey(key)) {
+    return res.status(403).json({ error: "cannot delete on-chain key enrollments" });
+  }
+  try {
+    const r = await fetch(`${FACE_SERVICE_URL}/enrolled/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
+    const data = await r.json();
+    if (!r.ok) return res.status(r.status).json(data);
+    // Also evict from admin-keys.json and in-memory Set
+    if (portalKeys) await portalKeys.revokeKey(key);
+    res.json(data);
+  } catch (e) {
+    res.status(503).json({ error: "face service unavailable", detail: e.message });
+  }
+});
+
+/* GET /admin/enrollments — list enrolled keys with on-chain/private status */
+app.get("/admin/enrollments", async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  try {
+    const r = await fetch(`${FACE_SERVICE_URL}/enrolled`);
+    if (!r.ok) return res.status(502).json({ error: "face service error" });
+    const { count, keys } = await r.json();
+
+    const programDeployed = !!process.env.PROGRAM_ID;
+    const records = await Promise.all(keys.map(async (k) => {
+      let chain = "private"; // default — off-chain/admin key
+      if (portalKeys && programDeployed && !portalKeys.isAdminKey(k)) {
+        const valid = await portalKeys.validateKey(k);
+        chain = valid ? "on-chain" : "private";
+      }
+      return { key: k, chain };
+    }));
+
+    res.json({ count, enrollments: records });
+  } catch (e) {
+    res.status(503).json({ error: "face service unavailable", detail: e.message });
+  }
+});
 
 /* ---------- ICE CONFIG ---------- */
 
@@ -101,17 +176,18 @@ io.on("connection", (socket) => {
   socket.on("join", async (code) => {
     code = code.trim();
 
-    /* Validate key on-chain if enabled */
-    if (portalKeys) {
+    if (!rooms[code]) rooms[code] = { users: [] };
+    const room = rooms[code];
+
+    /* Only the initiator (first to join) must hold a valid key.
+       The guest (second) just needs to know the code. */
+    if (room.users.length === 0 && portalKeys) {
       const valid = await portalKeys.validateKey(code);
       if (!valid) {
         socket.emit("invalid_key");
         return;
       }
     }
-
-    if (!rooms[code]) rooms[code] = { users: [] };
-    const room = rooms[code];
 
     if (room.users.length >= 2) {
       socket.emit("full");
@@ -140,9 +216,8 @@ io.on("connection", (socket) => {
 
   /* ---------- FACE WARNING ---------- */
 
-  socket.on("face_warning", (code) => {
-    socket.to(code).emit("face_warning");
-  });
+  socket.on("face_warning",  (code) => { socket.to(code).emit("face_warning"); });
+  socket.on("face_verified", (code) => { socket.to(code).emit("face_verified"); });
 
   /* ---------- REMOTE TRANSFORM ---------- */
 
