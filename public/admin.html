@@ -148,7 +148,12 @@
     <span id="enrollCount">—</span>
   </label>
   <div id="enrollList"><div id="enrollEmpty">no faces enrolled</div></div>
-  <button onclick="loadEnrollments()" style="font-size:10px;letter-spacing:2px;padding:6px 12px">REFRESH</button>
+  <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+    <button onclick="loadEnrollments()" style="font-size:10px;letter-spacing:2px;padding:6px 12px">REFRESH</button>
+    <input id="revokeInput" placeholder="revoke key…" maxlength="8"
+      style="font-family:inherit;font-size:11px;letter-spacing:2px;background:#111;border:1px solid #333;color:#eee;padding:5px 8px;text-transform:uppercase;width:120px">
+    <button onclick="revokeKey()" style="font-size:10px;letter-spacing:2px;padding:6px 12px;color:#ff4444;border-color:#ff4444">REVOKE</button>
+  </div>
 </div>
 
 <!-- enrollment form (hidden until unlocked) -->
@@ -301,6 +306,25 @@ dropZone.addEventListener("drop", (e) => {
   dropZone.classList.remove("over");
   loadFile(e.dataTransfer.files[0]);
 });
+
+/* ---- revoke key ---- */
+async function revokeKey() {
+  const key = document.getElementById("revokeInput").value.trim().toUpperCase();
+  if (key.length !== 8) { alert("Enter a valid 8-character portal key"); return; }
+  if (!confirm(`Revoke ${key}? This will immediately invalidate the key.`)) return;
+  const res = await fetch("/admin/revoke-key", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-key": adminKeyValue },
+    body: JSON.stringify({ key }),
+  });
+  const data = await res.json();
+  if (res.ok) {
+    document.getElementById("revokeInput").value = "";
+    loadEnrollments();
+  } else {
+    alert(data.error || "revoke failed");
+  }
+}
 
 /* ---- enrollments registry ---- */
 async function loadEnrollments() {

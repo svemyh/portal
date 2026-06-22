@@ -84,6 +84,18 @@ app.get("/face/health", async (req, res) => {
   }
 });
 
+/* POST /admin/revoke-key — remove a key from memory + disk without needing its enrollment */
+app.post("/admin/revoke-key", async (req, res) => {
+  const adminKey = process.env.ADMIN_KEY;
+  if (adminKey && req.headers["x-admin-key"] !== adminKey) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const { key } = req.body;
+  if (!key) return res.status(400).json({ error: "key required" });
+  if (portalKeys) await portalKeys.revokeKey(key);
+  res.json({ revoked: true, key: key.trim().toUpperCase() });
+});
+
 /* DELETE /admin/enrollments/:key — remove a private key's face enrollment */
 app.delete("/admin/enrollments/:key", async (req, res) => {
   const adminKey = process.env.ADMIN_KEY;
