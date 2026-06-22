@@ -101,6 +101,8 @@ app.delete("/admin/enrollments/:key", async (req, res) => {
     });
     const data = await r.json();
     if (!r.ok) return res.status(r.status).json(data);
+    // Also evict from admin-keys.json and in-memory Set
+    if (portalKeys) await portalKeys.revokeKey(key);
     res.json(data);
   } catch (e) {
     res.status(503).json({ error: "face service unavailable", detail: e.message });

@@ -397,4 +397,14 @@ function isAdminKey(code) {
   return adminKeys.has(code.trim().toUpperCase());
 }
 
-module.exports = { init, validateKey, isAdminKey };
+async function revokeKey(code) {
+  const key = code.trim().toUpperCase();
+  adminKeys.delete(key);
+  try {
+    await fetch(`${FACE_URL()}/admin-keys/${encodeURIComponent(key)}`, { method: "DELETE" });
+  } catch (e) {
+    console.warn(`revokeKey: failed to remove ${key} from face service — ${e.message}`);
+  }
+}
+
+module.exports = { init, validateKey, isAdminKey, revokeKey };
