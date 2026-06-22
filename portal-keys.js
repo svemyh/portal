@@ -26,7 +26,8 @@ const {
 } = require("@solana/web3.js");
 
 const { Program, AnchorProvider, Wallet, BN } = require("@coral-xyz/anchor");
-const { readFileSync } = require("fs");
+const fs = require("fs");
+const path = require("path");
 const crypto = require("crypto");
 
 /* ------------------------------------------------------------------ */
@@ -47,7 +48,7 @@ const connection = new Connection(RPC_URL, "confirmed");
 /* Load server keypair (used only for mark_used instruction) */
 function loadServerKeypair() {
   try {
-    const raw = JSON.parse(readFileSync(process.env.SERVER_KEYPAIR || "~/.config/solana/id.json"));
+    const raw = JSON.parse(fs.readFileSync(process.env.SERVER_KEYPAIR || "~/.config/solana/id.json"));
     return Keypair.fromSecretKey(Uint8Array.from(raw));
   } catch {
     console.warn("SERVER_KEYPAIR not found — mark_used will be unavailable");
@@ -134,6 +135,36 @@ const pendingSessions = new Map();
 
 const adminKeys = new Set();
 
+/* Persist admin keys to face service disk — survives all restarts AND redeploys */
+const FACE_URL = () => process.env.FACE_SERVICE_URL || "http://localhost:8000";
+
+async function loadKeysFromFaceService() {
+  try {
+    const r = await fetch(`${FACE_URL()}/admin-keys`);
+    if (!r.ok) return;
+    const { keys } = await r.json();
+    keys.forEach(k => adminKeys.add(k));
+    console.log(`Loaded ${keys.length} admin keys from face service`);
+  } catch (e) {
+    console.warn("Could not load admin keys from face service (will retry on next key use):", e.message);
+  }
+}
+
+async function syncKeyToFaceService(key) {
+  try {
+    await fetch(`${FACE_URL()}/admin-keys`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    });
+  } catch (e) {
+    console.warn("Could not sync admin key to face service:", e.message);
+  }
+}
+
+// Load on startup (face service may not be ready yet — that's fine, keys in ADMIN_KEYS env still work)
+loadKeysFromFaceService();
+
 /* Load permanent gifted keys from env on startup
    ADMIN_KEYS=KEY1,KEY2,KEY3 in your .env               */
 if (process.env.ADMIN_KEYS) {
@@ -160,8 +191,25 @@ async function validateKey(code) {
   /* Check admin keys first — instant, no RPC call */
   if (adminKeys.has(code)) return true;
 
-  /* Contract not yet deployed — allow all codes through */
-  if (!PROGRAM_ID) return true;
+  /* Startup load may have failed if face service wasn't ready yet — retry once */
+  const faceUrl = FACE_URL();
+  console.log(`validateKey: "${code}" not in memory (${adminKeys.size} keys loaded), fetching from ${faceUrl}/admin-keys`);
+  try {
+    const r = await fetch(`${faceUrl}/admin-keys`);
+    if (r.ok) {
+      const { keys } = await r.json();
+      keys.forEach(k => adminKeys.add(k));
+      console.log(`validateKey: loaded ${keys.length} keys from face service: [${keys.join(", ")}]`);
+      if (adminKeys.has(code)) return true;
+    } else {
+      console.warn(`validateKey: face service /admin-keys returned ${r.status}`);
+    }
+  } catch (e) {
+    console.warn(`validateKey: face service unreachable — ${e.message}`);
+  }
+
+  /* Contract not yet deployed — only admin keys are valid */
+  if (!PROGRAM_ID) return false;
 
   try {
     /* Fetch all KeyRecord accounts and look for a matching key */
@@ -204,33 +252,19 @@ function init(app) {
      Generates a free key at your discretion, no SOL required.
   */
   app.post("/admin/generate-key", (req, res) => {
-    const secret = req.headers["x-admin-secret"];
-    if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
+    const validSecret = process.env.ADMIN_SECRET && req.headers["x-admin-secret"] === process.env.ADMIN_SECRET;
+    const validKey    = process.env.ADMIN_KEY    && req.headers["x-admin-key"]    === process.env.ADMIN_KEY;
+    // If neither env var is configured, allow through (dev mode, consistent with rest of server)
+    const authConfigured = !!(process.env.ADMIN_SECRET || process.env.ADMIN_KEY);
+    if (authConfigured && !validSecret && !validKey) {
       return res.status(401).json({ error: "unauthorized" });
     }
 
     const key = generateAdminKey();
     adminKeys.add(key);
+    syncKeyToFaceService(key); // persist to face service disk — survives redeploys
     console.log(`Admin key generated: ${key} (total admin keys: ${adminKeys.size})`);
     res.json({ portalKey: key });
-  });
-
-  /* POST /admin/revoke-key
-     Header: x-admin-secret: <ADMIN_SECRET>
-     Body: { key: "XXXXXXXX" }
-     Revokes an admin key immediately.
-  */
-  app.post("/admin/revoke-key", (req, res) => {
-    const secret = req.headers["x-admin-secret"];
-    if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
-      return res.status(401).json({ error: "unauthorized" });
-    }
-
-    const { key } = req.body;
-    if (!key) return res.status(400).json({ error: "key required" });
-
-    const removed = adminKeys.delete(key);
-    res.json({ revoked: removed });
   });
 
   /* GET /admin/list-keys
@@ -341,4 +375,18 @@ async function listenForKey(buyer, sessionId) {
   console.warn(`Session ${sessionId}: key not found after ${maxAttempts} attempts`);
 }
 
-module.exports = { init, validateKey };
+function isAdminKey(code) {
+  return adminKeys.has(code.trim().toUpperCase());
+}
+
+async function revokeKey(code) {
+  const key = code.trim().toUpperCase();
+  adminKeys.delete(key);
+  try {
+    await fetch(`${FACE_URL()}/admin-keys/${encodeURIComponent(key)}`, { method: "DELETE" });
+  } catch (e) {
+    console.warn(`revokeKey: failed to remove ${key} from face service — ${e.message}`);
+  }
+}
+
+module.exports = { init, validateKey, isAdminKey, revokeKey };
