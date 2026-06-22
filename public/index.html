@@ -648,9 +648,24 @@ async function detectLocalFace() {
       sendDataMsg({ type: "face_box", box: face });
       const matchedKey = face.key || null;
       labelLocal.innerText = `${roleLabel(myUserNumber)}${matchedKey ? "\n✓ " + matchedKey : ""}`;
+
+      /* any matched key = enrolled keyholder; green regardless of which key it is */
+      if (matchedKey) {
+        if (socket._faceResult !== "verified") {
+          socket._faceResult = "verified";
+          setConnectionStatus("verified");
+          socket.emit("face_verified", currentCode);
+        }
+      } else if (socket._faceResult === "verified") {
+        /* previously verified, now face detected but no match — flag mismatch */
+        socket._faceResult = "mismatch";
+        setConnectionStatus("mismatch");
+        socket.emit("face_warning", currentCode);
+      }
     } else {
       localInfo = null;
       labelLocal.innerText = `${roleLabel(myUserNumber)}\nE:NO_FACE`;
+      /* no face in frame — don't flip status, user may have moved temporarily */
     }
   } catch (e) {
     clearTimeout(timeout);
@@ -984,23 +999,18 @@ async function rescueIdentity() {
 
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch("/face/verify", {
+    /* use identify (1:N) so any keyholder — not just the room initiator — goes green */
+    const res = await fetch("/face/identify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ portal_key: currentCode, image_b64 }),
+      body: JSON.stringify({ image_b64 }),
       signal: ctrl.signal,
     });
     clearTimeout(timeout);
     const data = await res.json();
 
-    let result = socket._faceResult;
-    if (data.reason === "no_enrollment") {
-      result = "no_enrollment";
-    } else if (data.match === false) {
-      result = "mismatch";
-    } else if (data.match === true) {
-      result = "verified";
-    }
+    const matched = data.faces && data.faces.length > 0 && data.faces[0].key;
+    const result = matched ? "verified" : "mismatch";
     socket._faceResult = result;
     socket._faceWarning = result === "mismatch";
     setConnectionStatus(result);
