@@ -102,6 +102,31 @@
   #status.err { color: #ff4444; opacity: 1; }
   .divider { border-top: 1px solid rgba(255,255,255,0.1); }
   #authCard { max-width: 360px; }
+  #enrollmentsCard { max-width: 460px; }
+  #enrollmentsCard label { display: flex; justify-content: space-between; align-items: baseline; }
+  #enrollCount { opacity: 1; font-size: 13px; letter-spacing: 1px; }
+  .enroll-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+    letter-spacing: 2px;
+  }
+  .enroll-row:last-child { border-bottom: none; }
+  .chain-badge {
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 2px 6px;
+    border: 1px solid;
+    opacity: 0.8;
+  }
+  .chain-badge.on-chain  { color: #00ff88; border-color: #00ff88; }
+  .chain-badge.private   { color: rgba(255,255,255,0.4); border-color: rgba(255,255,255,0.2); }
+  .chain-badge.unknown   { color: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.15); }
+  #enrollList { display: flex; flex-direction: column; gap: 0; }
+  #enrollEmpty { opacity: 0.35; font-size: 11px; letter-spacing: 2px; text-align: center; padding: 10px 0; }
 </style>
 </head>
 <body>
@@ -116,11 +141,28 @@
   <div id="authStatus" class="err" style="font-size:11px;letter-spacing:2px;min-height:16px"></div>
 </div>
 
+<!-- enrolled faces registry (hidden until unlocked) -->
+<div class="card" id="enrollmentsCard" style="display:none">
+  <label>
+    <span>FACE SERVICE</span>
+    <span id="enrollCount">—</span>
+  </label>
+  <div id="enrollList"><div id="enrollEmpty">no faces enrolled</div></div>
+  <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+    <button onclick="loadEnrollments()" style="font-size:10px;letter-spacing:2px;padding:6px 12px">REFRESH</button>
+    <input id="revokeInput" placeholder="revoke key…" maxlength="8"
+      style="font-family:inherit;font-size:11px;letter-spacing:2px;background:#111;border:1px solid #333;color:#eee;padding:5px 8px;text-transform:uppercase;width:120px">
+    <button onclick="revokeKey()" style="font-size:10px;letter-spacing:2px;padding:6px 12px;color:#ff4444;border-color:#ff4444">REVOKE</button>
+  </div>
+</div>
+
 <!-- enrollment form (hidden until unlocked) -->
 <div class="card" id="enrollCard" style="display:none">
   <label>PORTAL KEY</label>
-  <input type="text" id="portalKey" placeholder="e.g. ABCD1234" maxlength="32"
-         style="text-transform:uppercase">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="portalKeyDisplay" style="letter-spacing:4px;font-size:14px;opacity:0.35;flex:1">— — — — — — — —</span>
+    <button onclick="generateKey()" style="font-size:10px;letter-spacing:2px;padding:6px 12px;white-space:nowrap">GENERATE</button>
+  </div>
 
   <div class="divider"></div>
 
@@ -142,7 +184,7 @@
 
   <div class="divider"></div>
   <div id="enrollStatus"></div>
-  <button id="enrollBtn" onclick="enroll()" disabled>ENROLL FACE</button>
+  <button id="enrollBtn" onclick="enroll()" disabled>ENROLL</button>
 </div>
 
 <script>
@@ -151,11 +193,7 @@ let capturedB64   = null;
 let stream        = null;
 
 /* pre-warm face service so it's ready when we enroll */
-fetch("/face/detect", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ image_b64: "" }),
-}).catch(() => {});
+fetch("/face/health").catch(() => {});
 
 const camPreview    = document.getElementById("camPreview");
 const photoPreview  = document.getElementById("photoPreview");
@@ -194,14 +232,14 @@ async function unlock() {
   }
   adminKeyValue = val;
   document.getElementById("authCard").style.display = "none";
+  document.getElementById("enrollmentsCard").style.display = "flex";
   document.getElementById("enrollCard").style.display = "flex";
+  loadEnrollments();
 }
 document.getElementById("adminKey").addEventListener("keydown", e => {
   if (e.key === "Enter") unlock();
 });
-document.getElementById("portalKey").addEventListener("input", e => {
-  e.target.value = e.target.value.toUpperCase();
-});
+let currentPortalKey = "";
 
 /* ---- camera ---- */
 async function startCamera() {
@@ -236,7 +274,7 @@ function captureFrame() {
   stopCamera();
   photoPreview.src = capturedB64;
   photoPreview.style.display = "block";
-  enrollBtn.disabled = false;
+  enrollBtn.disabled = !currentPortalKey;
   setStatus("frame captured — click ENROLL FACE");
 }
 
@@ -252,7 +290,7 @@ function loadFile(file) {
     capturedB64 = e.target.result;
     photoPreview.src = capturedB64;
     photoPreview.style.display = "block";
-    enrollBtn.disabled = false;
+    enrollBtn.disabled = !currentPortalKey;
     setStatus("photo loaded — click ENROLL FACE");
   };
   reader.readAsDataURL(file);
@@ -269,10 +307,148 @@ dropZone.addEventListener("drop", (e) => {
   loadFile(e.dataTransfer.files[0]);
 });
 
+/* ---- revoke key ---- */
+async function revokeKey() {
+  const key = document.getElementById("revokeInput").value.trim().toUpperCase();
+  if (key.length !== 8) { alert("Enter a valid 8-character portal key"); return; }
+  if (!confirm(`Revoke ${key}? This will immediately invalidate the key.`)) return;
+  const res = await fetch("/admin/revoke-key", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-key": adminKeyValue },
+    body: JSON.stringify({ key }),
+  });
+  const data = await res.json();
+  if (res.ok) {
+    document.getElementById("revokeInput").value = "";
+    loadEnrollments();
+  } else {
+    alert(data.error || "revoke failed");
+  }
+}
+
+/* ---- enrollments registry ---- */
+async function loadEnrollments() {
+  const listEl  = document.getElementById("enrollList");
+  const countEl = document.getElementById("enrollCount");
+  listEl.innerHTML = "<div style='opacity:0.35;font-size:11px;letter-spacing:2px;text-align:center;padding:10px 0'>loading...</div>";
+  try {
+    const res = await fetch("/admin/enrollments", {
+      headers: { "x-admin-key": adminKeyValue },
+    });
+    if (!res.ok) { listEl.innerHTML = "<div id='enrollEmpty'>error loading enrollments</div>"; return; }
+    const { count, enrollments } = await res.json();
+    countEl.innerText = count;
+    if (!enrollments || enrollments.length === 0) {
+      listEl.innerHTML = "<div id='enrollEmpty'>no faces enrolled</div>";
+      return;
+    }
+    /* Group guests under their parent key */
+    const parents = {};
+    const guests  = {};
+    for (const e of enrollments) {
+      if (e.key.includes(":")) {
+        const base = e.key.split(":")[0];
+        if (!guests[base]) guests[base] = [];
+        guests[base].push(e);
+      } else {
+        parents[e.key] = e;
+      }
+    }
+    /* Also surface any orphan guest keys (parent not enrolled) */
+    for (const base of Object.keys(guests)) {
+      if (!parents[base]) parents[base] = { key: base, chain: "unknown", orphan: true };
+    }
+
+    const copyBtn = (key) =>
+      `<button onclick="navigator.clipboard.writeText('${key}')" style="font-size:9px;letter-spacing:1px;padding:2px 7px;border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.45);background:none;cursor:crosshair" onmouseover="this.style.borderColor='white';this.style.color='white'" onmouseout="this.style.borderColor='rgba(255,255,255,0.2)';this.style.color='rgba(255,255,255,0.45)'">⎘</button>`;
+
+    const deleteBtn = (rawKey, chain) => chain === "private" || rawKey.includes(":")
+      ? `<button onclick="deleteEnrollment('${rawKey}')" style="font-size:9px;letter-spacing:1px;padding:2px 7px;border:1px solid rgba(255,80,80,0.4);color:rgba(255,100,100,0.7);background:none;cursor:crosshair" onmouseover="this.style.borderColor='#ff4444';this.style.color='#ff4444'" onmouseout="this.style.borderColor='rgba(255,80,80,0.4)';this.style.color='rgba(255,100,100,0.7)'">✕</button>`
+      : "";
+
+    listEl.innerHTML = Object.values(parents).map(({ key, chain, orphan }) => {
+      const guestRows = (guests[key] || []).map((g, i) => `
+        <div class="enroll-row" id="row-${g.key}" style="padding-left:18px;opacity:0.75">
+          <span style="font-size:11px">↳ guest ${i + 1}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="chain-badge ${chain}" style="font-size:9px">guest</span>
+            ${copyBtn(key)}
+            ${deleteBtn(g.key, chain)}
+          </div>
+        </div>`).join("");
+      return `
+        <div class="enroll-row" id="row-${key}" ${orphan ? 'style="opacity:0.5"' : ""}>
+          <span>${key}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="chain-badge ${chain}">${chain}</span>
+            ${copyBtn(key)}
+            ${deleteBtn(key, chain)}
+          </div>
+        </div>${guestRows}`;
+    }).join("");
+  } catch (e) {
+    listEl.innerHTML = "<div id='enrollEmpty'>face service unavailable</div>";
+  }
+}
+
+/* ---- generate key ---- */
+async function generateKey() {
+  const btn = document.querySelector('#enrollCard button[onclick="generateKey()"]');
+  btn.disabled = true;
+  btn.innerText = "...";
+  try {
+    const res = await fetch("/admin/generate-key", {
+      method: "POST",
+      headers: { "x-admin-key": adminKeyValue },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      currentPortalKey = data.portalKey;
+      const display = document.getElementById("portalKeyDisplay");
+      display.innerText = currentPortalKey;
+      display.style.opacity = "1";
+      enrollBtn.disabled = !capturedB64;
+    } else {
+      setStatus(data.error || "key generation failed", "err");
+    }
+  } catch (e) {
+    setStatus("network error: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "GENERATE";
+  }
+}
+
+/* ---- delete enrollment ---- */
+async function deleteEnrollment(key) {
+  if (!confirm(`Remove face enrollment for ${key}?`)) return;
+  try {
+    const res = await fetch(`/admin/enrollments/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": adminKeyValue },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      const row = document.getElementById(`row-${key}`);
+      if (row) row.remove();
+      const countEl = document.getElementById("enrollCount");
+      countEl.innerText = Math.max(0, parseInt(countEl.innerText || "0") - 1);
+      const listEl = document.getElementById("enrollList");
+      if (!listEl.querySelector(".enroll-row")) {
+        listEl.innerHTML = "<div id='enrollEmpty'>no faces enrolled</div>";
+      }
+    } else {
+      alert(data.error || "delete failed");
+    }
+  } catch (e) {
+    alert("network error: " + e.message);
+  }
+}
+
 /* ---- enroll ---- */
 async function enroll() {
-  const key = document.getElementById("portalKey").value.trim().toUpperCase();
-  if (!key)        { setStatus("enter a portal key", "err"); return; }
+  const key = currentPortalKey;
+  if (!key)        { setStatus("generate a portal key first", "err"); return; }
   if (!capturedB64){ setStatus("capture or upload a photo first", "err"); return; }
 
   enrollBtn.disabled = true;
@@ -293,7 +469,12 @@ async function enroll() {
       capturedB64 = null;
       photoPreview.style.display = "none";
       photoPreview.src = "";
-      document.getElementById("portalKey").value = "";
+      currentPortalKey = "";
+      const display = document.getElementById("portalKeyDisplay");
+      display.innerText = "— — — — — — — —";
+      display.style.opacity = "0.35";
+      enrollBtn.disabled = true;
+      loadEnrollments();
     } else {
       setStatus(data.error || data.detail || "enrollment failed", "err");
     }
