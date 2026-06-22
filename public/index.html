@@ -407,7 +407,7 @@ button {
 <div id="status"></div>
 
 <div id="entry">
-  <input id="code" placeholder="enter code">
+  <input id="code" placeholder="portal key">
   <button onclick="join()">enter</button>
 </div>
 
@@ -433,7 +433,9 @@ button {
     <div class="help-row"><span class="help-key">⌘D</span><span class="help-desc">TOGGLE CAMERA</span></div>
     <div class="help-row"><span class="help-key">⌘V</span><span class="help-desc">MINIMISE VIDEO</span></div>
     <div class="help-row"><span class="help-key">⌘C</span><span class="help-desc">MAXIMISE CHAT</span></div>
-    <div class="help-row"><span class="help-key">⌘T</span><span class="help-desc">REMOTE CONTROL</span></div>
+    <div class="help-row"><span class="help-key">⌘S</span><span class="help-desc">REMOTE CONTROL</span></div>
+    <div class="help-row"><span class="help-key">⌘I</span><span class="help-desc">RESCAN IDENTITY</span></div>
+    <div class="help-row"><span class="help-key">⌘G</span><span class="help-desc">VERIFY / ENROLL GUEST</span></div>
     <div class="help-row"><span class="help-key">⌘R</span><span class="help-desc">DISCONNECT</span></div>
   </div>
 </div>
@@ -475,8 +477,7 @@ const socket = io();
 let pc, dataChannel, receiveChannel, localStream, currentCode;
 
 /* ---- pre-warm face service on page load so cold-start doesn't hit during join ---- */
-fetch("/face/detect", { method: "POST", headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ image_b64: "" }) }).catch(() => {});
+fetch("/face/health").catch(() => {});
 
 let videoX = 0, videoY = 0, videoScale = 1;
 let videoMinimized = false;
@@ -490,6 +491,8 @@ let mySocketId   = null;
 
 socket.on("connect", () => { mySocketId = socket.id; });
 socket.on("assigned", ({ userNumber }) => { myUserNumber = userNumber; });
+
+function roleLabel(num) { const k = currentCode || "—"; return num === 1 ? `#${k}` : `#${k}-G`; }
 
 /* ---- elements ---- */
 const remoteVideo  = document.getElementById("remote");
@@ -570,8 +573,10 @@ function drawPeerFaceBox(normBox) {
   const ph = normBox.h * vh * scale;
 
   const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
-  const line1   = currentCode || "—";
-  const line2   = `#${peerNum}`;
+  const line1   = normBox.key ? normBox.key : (currentCode || "—");
+  const line2   = normBox.key
+    ? (normBox.is_guest ? "· guest" : "✓ identified")
+    : `#${peerNum}`;
 
   const BRG = "#004225";
 
@@ -615,7 +620,7 @@ async function detectLocalFace() {
     if (vt && !vt.enabled) {
       localInfo = null;
       sendDataMsg({ type: "face_box", box: null });
-      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\nCAM OFF`;
+      labelLocal.innerText = `${roleLabel(myUserNumber)}\nCAM OFF`;
       positionLabel(labelLocal, remoteVideo);
       return;
     }
@@ -628,7 +633,7 @@ async function detectLocalFace() {
     _faceCapCtx.drawImage(localVideo, 0, 0, DETECT_W, DETECT_H);
     const image_b64 = _faceCapCanvas.toDataURL("image/jpeg", 0.7);
 
-    const res  = await fetch("/face/detect", {
+    const res  = await fetch("/face/identify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ image_b64 }),
@@ -639,17 +644,18 @@ async function detectLocalFace() {
 
     if (data.faces && data.faces.length > 0) {
       localInfo = { detected: true };
-      const box = data.faces[0];
-      sendDataMsg({ type: "face_box", box });
-      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}`;
+      const face = data.faces[0];
+      sendDataMsg({ type: "face_box", box: face });
+      const matchedKey = face.key || null;
+      labelLocal.innerText = `${roleLabel(myUserNumber)}${matchedKey ? "\n✓ " + matchedKey : ""}`;
     } else {
       localInfo = null;
-      labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\nE:NO_FACE`;
+      labelLocal.innerText = `${roleLabel(myUserNumber)}\nE:NO_FACE`;
     }
   } catch (e) {
     clearTimeout(timeout);
     const code = e.name === "AbortError" ? "E:SVC_TIMEOUT" : "E:SVC_OFFLINE";
-    labelLocal.innerText = `${currentCode || "—"}\n#${myUserNumber || "—"}\n${code}`;
+    labelLocal.innerText = `${roleLabel(myUserNumber)}\n${code}`;
     console.warn("face detect:", e);
   }
   positionLabel(labelLocal, remoteVideo);
@@ -694,7 +700,7 @@ function startAnalysis() {
 
   /* set corner labels immediately so key/user shows before detection completes */
   const peerNum = myUserNumber ? (3 - myUserNumber) : 2;
-  labelLocal.innerText  = `${currentCode || "—"}\n#${myUserNumber || "—"}\nE:DETECTING`;
+  labelLocal.innerText  = `${roleLabel(myUserNumber)}\nE:DETECTING`;
   positionLabel(labelLocal, remoteVideo);
   const rect = remoteVideo.getBoundingClientRect();
   labelRemote.style.right  = (window.innerWidth - rect.right + 10) + "px";
@@ -702,7 +708,7 @@ function startAnalysis() {
   labelRemote.style.left   = "auto";
   labelRemote.style.top    = "auto";
   labelRemote.style.textAlign = "right";
-  labelRemote.innerText = `${currentCode || "—"}\n#${peerNum}\nE:AWAITING`;
+  labelRemote.innerText = `${roleLabel(peerNum)}\nE:AWAITING`;
 
   canvasStatus("E:AWAITING_PEER");
 
@@ -819,9 +825,12 @@ async function join() {
 
     if (data.reason === "no_enrollment") {
       /* key has no face on file — allow through silently */
+      socket._faceResult = "no_enrollment";
     } else if (data.match === false) {
-      /* face doesn't match — warn both users after connection */
+      socket._faceResult = "mismatch";
       socket._faceWarning = true;
+    } else if (data.match === true) {
+      socket._faceResult = "verified";
     }
   } catch (e) {
     console.warn("face verification unavailable:", e);
@@ -866,11 +875,11 @@ socket.on("peer", async ({ initiator }) => {
     helpBoxEl.classList.remove("hidden");
     startAnalysis();
 
-    if (socket._faceWarning) {
-      document.getElementById("status").innerText = "⚠ face mismatch — identity unverified";
+    setConnectionStatus(socket._faceResult);
+    if (socket._faceResult === "mismatch") {
       socket.emit("face_warning", currentCode);
-    } else {
-      document.getElementById("status").innerText = "connected";
+    } else if (socket._faceResult === "verified") {
+      socket.emit("face_verified", currentCode);
     }
   };
 
@@ -909,10 +918,123 @@ socket.on("full", () => {
   if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
 });
 
-socket.on("peer_left", () => { location.reload(); });
-socket.on("face_warning", () => {
-  document.getElementById("status").innerText = "⚠ peer face mismatch — their identity is unverified";
+socket.on("invalid_key", () => {
+  const statusEl = document.getElementById("status");
+  statusEl.innerText = "invalid portal key";
+  statusEl.style.color = "#ff4444";
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  setTimeout(() => location.reload(), 2500);
 });
+
+socket.on("peer_left", () => { location.reload(); });
+socket.on("face_warning",  () => { setPeerStatus("mismatch"); });
+socket.on("face_verified", () => { setPeerStatus("verified"); });
+
+async function enrollGuest() {
+  if (!remoteVideo || remoteVideo.readyState < 2 || !currentCode) {
+    document.getElementById("status").innerText = "no peer video to enroll from";
+    return;
+  }
+  const statusEl = document.getElementById("status");
+  statusEl.innerText = "enrolling guest...";
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width  = remoteVideo.videoWidth  || 640;
+    canvas.height = remoteVideo.videoHeight || 480;
+    canvas.getContext("2d").drawImage(remoteVideo, 0, 0);
+    const image_b64 = canvas.toDataURL("image/jpeg", 0.9);
+    const res = await fetch("/face/enroll-guest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portal_key: currentCode, image_b64 }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      socket._faceResult = "verified";
+      statusEl.innerText = `guest enrolled (${data.guest_slot})`;
+      statusEl.style.color = "#00ff88";
+      setTimeout(() => {
+        statusEl.style.color = "";
+        setConnectionStatus("verified");
+      }, 3000);
+    } else {
+      statusEl.innerText = data.detail || data.error || "guest enrollment failed";
+      statusEl.style.color = "#ff4444";
+      setTimeout(() => { statusEl.style.color = ""; setConnectionStatus(socket._faceResult); }, 3000);
+    }
+  } catch (e) {
+    statusEl.innerText = "guest enrollment error";
+    statusEl.style.color = "#ff4444";
+    setTimeout(() => { statusEl.style.color = ""; setConnectionStatus(socket._faceResult); }, 3000);
+  }
+}
+
+async function rescueIdentity() {
+  if (!localStream || !currentCode) return;
+  document.getElementById("status").innerText = "rescanning...";
+  try {
+    const canvas = document.createElement("canvas");
+    const videoTrack = localStream.getVideoTracks()[0];
+    const capture = new ImageCapture(videoTrack);
+    const bitmap = await capture.grabFrame();
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0);
+    const image_b64 = canvas.toDataURL("image/jpeg", 0.8);
+
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 6000);
+    const res = await fetch("/face/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portal_key: currentCode, image_b64 }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timeout);
+    const data = await res.json();
+
+    let result = socket._faceResult;
+    if (data.reason === "no_enrollment") {
+      result = "no_enrollment";
+    } else if (data.match === false) {
+      result = "mismatch";
+    } else if (data.match === true) {
+      result = "verified";
+    }
+    socket._faceResult = result;
+    socket._faceWarning = result === "mismatch";
+    setConnectionStatus(result);
+
+    if (result === "mismatch")  socket.emit("face_warning",  currentCode);
+    if (result === "verified")  socket.emit("face_verified", currentCode);
+  } catch (e) {
+    document.getElementById("status").innerText = "rescan failed";
+    setTimeout(() => setConnectionStatus(socket._faceResult), 2000);
+  }
+}
+
+function setConnectionStatus(result) {
+  const el = document.getElementById("status");
+  el.style.color = "";
+  if (result === "verified") {
+    el.innerHTML = "connected<br><span style='color:#00ff88;font-size:10px;letter-spacing:2px'>" + (currentCode || "") + "</span>";
+  } else if (result === "mismatch") {
+    el.innerHTML = "connected<br><span style='color:#ff4444;font-size:10px;letter-spacing:2px'>" + (currentCode || "") + "</span>";
+  } else {
+    el.innerText = "connected";
+  }
+}
+
+function setPeerStatus(result) {
+  const el  = document.getElementById("status");
+  const top = el.innerHTML.split("<br>")[0] || "connected";
+  const key = currentCode || "";
+  if (result === "verified") {
+    el.innerHTML = top + "<br><span style='color:#00ff88;font-size:10px;letter-spacing:2px'>" + key + "</span>";
+  } else if (result === "mismatch") {
+    el.innerHTML = top + "<br><span style='color:#ff4444;font-size:10px;letter-spacing:2px'>" + key + "</span>";
+  }
+}
 
 /* =====================================================================
    REMOTE TRANSFORM
@@ -979,7 +1101,7 @@ function setupDataChannel(channel) {
       if (msg.type === "remote_claim") handleRemoteClaim(msg);
 
       /* chat */
-      if (msg.type === "chat") appendChat(msg.text, "them");
+      if (msg.type === "chat") appendChat(msg.text, "them", myUserNumber ? (3 - myUserNumber) : 2);
 
       /* peer's face bbox from server — draw box and update corner label */
       if (msg.type === "face_box") {
@@ -992,7 +1114,7 @@ function setupDataChannel(channel) {
         labelRemote.style.left   = "auto";
         labelRemote.style.top    = "auto";
         labelRemote.style.textAlign = "right";
-        labelRemote.innerText = `${currentCode || "—"}\n#${peerNum}`;
+        labelRemote.innerText = `${roleLabel(peerNum)}`;
       }
 
       /* global ui state sync */
@@ -1268,10 +1390,14 @@ filePicker.addEventListener("change", async () => {
    CHAT
    ===================================================================== */
 
-function appendChat(text, who) {
+function appendChat(text, who, senderNum) {
   const div = document.createElement("div");
   div.className = "chat-msg " + who;
-  div.innerText = text;
+  const label = document.createElement("span");
+  label.style.cssText = "display:block;font-size:9px;letter-spacing:2px;opacity:0.45;margin-bottom:2px;";
+  label.innerText = roleLabel(senderNum);
+  div.appendChild(label);
+  div.appendChild(document.createTextNode(text));
   chatLog.appendChild(div);
   chatLog.scrollTop = chatLog.scrollHeight;
 }
@@ -1280,7 +1406,7 @@ function sendChat() {
   const text = chatInput.value.trim();
   if (!text) return;
   chatInput.value = "";
-  appendChat(text, "me");
+  appendChat(text, "me", myUserNumber);
   sendDataMsg({ type: "chat", text });
 }
 
@@ -1346,7 +1472,8 @@ window.addEventListener("resize", () => {
 });
 
 document.addEventListener("keydown", (e) => {
-  const typing = document.activeElement === chatInput;
+  const el = document.activeElement;
+  const typing = el === chatInput || el.tagName === "INPUT" || el.tagName === "TEXTAREA";
 
   /* Cmd+V / Ctrl+V — minimize/restore video */
   if ((e.metaKey || e.ctrlKey) && e.key === "v") {
@@ -1376,11 +1503,26 @@ document.addEventListener("keydown", (e) => {
     toggleVideo();
   }
 
-  /* Cmd+T / Ctrl+T — toggle remote control */
-  if ((e.metaKey || e.ctrlKey) && e.key === "t") {
+  /* Cmd+S / Ctrl+S — toggle remote control */
+  if ((e.metaKey || e.ctrlKey) && e.key === "s") {
     if (typing) return;
     e.preventDefault();
     toggleRemoteControl();
+  }
+
+  /* Cmd+I / Ctrl+I — rescan identity */
+  if ((e.metaKey || e.ctrlKey) && e.key === "i") {
+    if (typing) return;
+    e.preventDefault();
+    rescueIdentity();
+  }
+
+  /* Cmd+G / Ctrl+G — initiator: validate identity / guest: enroll face */
+  if ((e.metaKey || e.ctrlKey) && e.key === "g") {
+    if (typing) return;
+    e.preventDefault();
+    if (myUserNumber === 1) rescueIdentity();
+    else enrollGuest();
   }
 
   /* Cmd+R / Ctrl+R — disconnect */
